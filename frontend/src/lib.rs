@@ -1,6 +1,6 @@
 mod app;
-mod utils;
 mod pages;
+mod utils;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
