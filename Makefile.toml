@@ -1,0 +1,8 @@
+[tasks.install]
+dependencies = ["build", "member_flow"]
+
+[tasks.member_flow]
+run_task = { name = "member_flow", fork = true }
+
+[env]
+INSTALL_PATH= "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/build"

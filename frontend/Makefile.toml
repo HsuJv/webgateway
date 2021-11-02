@@ -1,0 +1,24 @@
+[tasks.build]
+command = "wasm-pack"
+args = ["build"]
+
+[tasks.install]
+dependencies=["install_wasm", "install_static"]
+
+[tasks.install_wasm]
+script = '''
+    mkdir -p $FE_WASM_INSTALL_PATH
+    cp -r ./pkg $FE_WASM_INSTALL_PATH
+
+    '''
+
+[tasks.install_static]
+script = '''
+    mkdir -p $FE_STATIC_INSTALL_PATH
+    cp www/index.* $FE_STATIC_INSTALL_PATH
+    cp www/bootstrap.js $FE_STATIC_INSTALL_PATH
+    '''
+
+[env]
+FE_WASM_INSTALL_PATH="${INSTALL_PATH}/html"
+FE_STATIC_INSTALL_PATH="${INSTALL_PATH}/html/www"
