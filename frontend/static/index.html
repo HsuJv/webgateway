@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>Hello, World</title>
+  <title>Web Gateway</title>
   <style type="text/css">
     .navbar {
       width: 100%;
@@ -31,7 +31,12 @@
       height: 58px;
     }
   </style>
-  <script src="./bootstrap.js" defer></script>
+  <script type="module" defer>
+    import init from "/static/wasm.js";
+    import { run_app } from "/static/wasm.js";
+    await init();
+    await run_app();
+  </script>
 </head>
 
 <body>

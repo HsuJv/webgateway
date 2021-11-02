@@ -1,4 +1,5 @@
 [tasks.install]
+dependencies = ["build"]
 script = '''
     mkdir -p $INSTALL_PATH
     cp $CARGO_MAKE_CRATE_TARGET_DIRECTORY/debug/$CARGO_MAKE_CRATE_NAME $INSTALL_PATH
