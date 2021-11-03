@@ -15,10 +15,17 @@ repository = "https://www.github.com/HsuJv/webgateway"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix = "0.10.0"
 actix-web = "3.3.2"
 actix-files = "0.5.0"
 tokio-tar = "0.3.0"
 urlencoding = "2.1.0"
+actix-web-actors = "3.0.0"
+
+# log systems
+femme = "1.3"
+log = "0.4"
+async-log = "2.0.0"
 
 [profile.dev]
 panic = "unwind"
