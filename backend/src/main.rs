@@ -1,10 +1,13 @@
 use actix_files as fs;
+use actix_session::CookieSession;
 use actix_web::http::{ContentEncoding, StatusCode};
 use actix_web::*;
 
 use femme;
 use log::info;
+use rand::Rng;
 
+mod user;
 mod ws;
 
 const STATIC_DIR: &str = "./static/";
@@ -32,11 +35,14 @@ async fn main() -> std::io::Result<()> {
     setup_logger();
 
     info!("Server starts at http://127.0.0.1:8080");
+    let private_key = rand::thread_rng().gen::<[u8; 32]>();
     HttpServer::new(move || {
         App::new()
+            .wrap(CookieSession::signed(&private_key).secure(false))
             .wrap(middleware::Compress::new(ContentEncoding::Gzip))
             .service(index)
-            .service(web::resource("/ws").route(web::get().to(ws::index)))
+            .service(ws::ws_index)
+            .service(user::auth::auth)
             .service(
                 fs::Files::new("/static", STATIC_DIR)
                     .prefer_utf8(true)

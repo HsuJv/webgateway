@@ -1,4 +1,5 @@
 use actix::{Actor, StreamHandler};
+use actix_web::*;
 use actix_web::{web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use log::*;
@@ -22,7 +23,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
     }
 }
 
-pub async fn index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
+#[get("/ws")]
+pub async fn ws_index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
     let resp = ws::start(MyWs {}, &req, stream);
     match &resp {
         Ok(resp) => info!("{:?}", resp),

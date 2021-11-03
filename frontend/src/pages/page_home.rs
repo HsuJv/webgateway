@@ -1,31 +1,26 @@
 use yew::prelude::*;
-use yew::Component;
 use yew::ShouldRender;
+use yew::{html, Component, Html};
 
-pub struct PageHome;
+use crate::components;
+
+pub enum HomeMsg {}
+
+pub struct PageHome {
+    link: ComponentLink<Self>,
+}
 
 impl Component for PageHome {
-    type Message = ();
+    type Message = HomeMsg;
     type Properties = ();
 
-    fn create(_props: Self::Properties, _link: ComponentLink<Self>) -> Self {
-        Self
+    fn create(_props: Self::Properties, link: ComponentLink<Self>) -> Self {
+        Self { link }
     }
 
     fn view(&self) -> Html {
         html! {
-            <section class="hero is-danger is-bold is-large">
-                <div class="hero-body">
-                    <div class="container">
-                        <h1 class="title">
-                            { "Hello World" }
-                        </h1>
-                        <h2 class="subtitle">
-                            { "Hello again" }
-                        </h2>
-                    </div>
-                </div>
-            </section>
+            <components::auth::AuthComponents/>
         }
     }
 

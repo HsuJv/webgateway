@@ -70,10 +70,8 @@ impl Component for App {
                     />
                 </main>
                 <footer class="footer">
-                    <div class="content has-text-centered">
-                        { "Powered by " }
-                        <a href="https://yew.rs">{ "Yew" }</a>
-                    </div>
+                    { "Powered by " }
+                    <a href="https://yew.rs">{ "Yew" }</a>
                 </footer>
             </>
         }
