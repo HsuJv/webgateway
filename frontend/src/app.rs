@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
+use crate::components::auth;
 use crate::pages::{page_home::PageHome, page_not_found::PageNotFound, page_ssh::PageSsh};
 use yew::html::IntoPropValue;
 use yew::prelude::*;
 use yew::services::ConsoleService;
-use yew::virtual_dom::VNode;
 use yew::Component;
 use yew_router::prelude::*;
 use yew_router::{router::Router, Switch};
@@ -21,11 +21,11 @@ enum AppRoute {
     NotFound,
 }
 
-impl Into<&str> for AppRoute {
-    fn into(self) -> &'static str {
-        match self {
-            AppRoute::Ssh => &"/ssh",
-            _ => &"/",
+impl From<AppRoute> for &str {
+    fn from(route: AppRoute) -> Self {
+        match route {
+            AppRoute::Ssh => "/ssh",
+            _ => "/",
         }
     }
 }
@@ -36,19 +36,30 @@ impl IntoPropValue<Option<Cow<'_, str>>> for AppRoute {
     }
 }
 
-pub struct App {}
+pub struct App {
+    authdone: bool,
+    link: ComponentLink<Self>,
+}
 
-pub enum Msg {}
+pub enum AppMsg {
+    AuthDone,
+}
 
 impl Component for App {
-    type Message = Msg;
+    type Message = AppMsg;
     type Properties = ();
 
-    fn create(_: Self::Properties, _link: ComponentLink<Self>) -> Self {
-        Self {}
+    fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
+        Self {
+            authdone: false,
+            link,
+        }
     }
 
-    fn update(&mut self, _msg: Self::Message) -> ShouldRender {
+    fn update(&mut self, msg: Self::Message) -> ShouldRender {
+        match msg {
+            AppMsg::AuthDone => self.authdone = true,
+        }
         true
     }
 
@@ -56,19 +67,35 @@ impl Component for App {
         false
     }
 
-    fn view(&self) -> VNode {
+    fn view(&self) -> Html {
         html! {
             <>
-                { self.view_nav() }
-                <main  class="content">
-                    <Router<AppRoute>
-                        render = Router::render(Self::switch)
-                        redirect=Router::redirect(|route: Route| {
-                            ConsoleService::log(&format!("{:?}", route));
-                            AppRoute::NotFound
-                        })
-                    />
-                </main>
+                {
+
+                    if self.authdone {
+                        html! {
+                            <>
+                                {self.view_nav()}
+
+                                <main class="content">
+                                <Router<AppRoute>
+                                    render = Router::render(Self::switch)
+                                    redirect=Router::redirect(|route: Route| {
+                                        ConsoleService::log(&format!("{:?}", route));
+                                        AppRoute::NotFound
+                                    })
+                                />
+                                </main>
+                            </>
+                        }
+                    }
+                    else {
+                        let onauthdone = &self.link.callback(|_| AppMsg::AuthDone);
+                        html!{
+                            <auth::AuthComponents onauthdone=onauthdone/>
+                        }
+                    }
+                }
                 <footer class="footer">
                     { "Powered by " }
                     <a href="https://yew.rs">{ "Yew" }</a>

@@ -20,6 +20,7 @@ pub struct AuthComponents {
     link: ComponentLink<Self>,
     auth_result: String,
     fetch_task: Option<FetchTask>,
+    onauthdone: Callback<()>,
 }
 
 impl Debug for AuthComponents {
@@ -32,17 +33,24 @@ impl Debug for AuthComponents {
     }
 }
 
+#[derive(Clone, PartialEq, Properties)]
+pub struct AuthProps {
+    #[prop_or_default]
+    pub onauthdone: Callback<()>,
+}
+
 impl Component for AuthComponents {
     type Message = AuthMsg;
-    type Properties = ();
+    type Properties = AuthProps;
 
-    fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
+    fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
         AuthComponents {
             username: String::new(),
             password: String::new(),
             auth_result: String::new(),
             link,
             fetch_task: None,
+            onauthdone: props.onauthdone,
         }
     }
 
@@ -83,6 +91,9 @@ impl Component for AuthComponents {
             AuthMsg::AuthResponse(response) => {
                 if let Ok(response) = response {
                     self.auth_result = response["status"].to_string();
+                    if "\"success\"" == self.auth_result {
+                        self.onauthdone.emit(());
+                    }
                 } else {
                     self.auth_result = String::from("Auth failed with unknown reason");
                     ConsoleService::error(&format!("{:?}", response.unwrap_err().to_string()));
@@ -90,7 +101,6 @@ impl Component for AuthComponents {
                 // release resources
                 self.fetch_task = None;
             }
-            _ => panic!("unexpected message"),
         }
         // ConsoleService::log(&format!(
         //     "username: {}, password {}",
@@ -139,7 +149,7 @@ impl Component for AuthComponents {
 
 impl AuthComponents {
     fn auth_result_view(&self) -> Html {
-        if let Some(_) = &self.fetch_task {
+        if self.fetch_task.is_some() {
             html! {
                 <div>{"Authing..."}</div>
             }

@@ -3,12 +3,17 @@ use actix_session::CookieSession;
 use actix_web::http::{ContentEncoding, StatusCode};
 use actix_web::*;
 
-use femme;
 use log::info;
 use rand::Rng;
 
 mod user;
 mod ws;
+
+// pub struct AppState ;
+
+// impl Actor for AppState {
+//     type Context = actix::Context<Self>;
+// }
 
 const STATIC_DIR: &str = "./static/";
 const PAGE_INDEX: &str = "./static/index.html";
@@ -38,6 +43,7 @@ async fn main() -> std::io::Result<()> {
     let private_key = rand::thread_rng().gen::<[u8; 32]>();
     HttpServer::new(move || {
         App::new()
+            // .data(AppState)
             .wrap(CookieSession::signed(&private_key).secure(false))
             .wrap(middleware::Compress::new(ContentEncoding::Gzip))
             .service(index)
