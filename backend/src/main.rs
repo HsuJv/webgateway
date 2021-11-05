@@ -1,23 +1,42 @@
+use std::{collections::HashMap, sync::RwLock};
+
+use actix::Addr;
 use actix_files as fs;
 use actix_session::CookieSession;
 use actix_web::http::{ContentEncoding, StatusCode};
 use actix_web::*;
 
+use agent::{agent::Agent, resolver::DnsResolver};
 use log::info;
 use rand::Rng;
 
+mod agent;
 mod user;
-mod ws;
-
-// pub struct AppState ;
-
-// impl Actor for AppState {
-//     type Context = actix::Context<Self>;
-// }
 
 const STATIC_DIR: &str = "./static/";
 const PAGE_INDEX: &str = "./static/index.html";
 const PAGE_NOT_FOUND: &str = "./static/p404.html";
+
+pub struct AppData {
+    // session: CookieSession,
+    resolver: Addr<DnsResolver>,
+    agents: RwLock<HashMap<u32, Addr<Agent>>>,
+}
+
+impl AppData {
+    pub fn new() -> Self {
+        Self {
+            resolver: DnsResolver::new(),
+            agents: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
+impl Default for AppData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 fn setup_logger() {
     let logger = femme::pretty::Logger::new();
@@ -43,12 +62,14 @@ async fn main() -> std::io::Result<()> {
     let private_key = rand::thread_rng().gen::<[u8; 32]>();
     HttpServer::new(move || {
         App::new()
-            // .data(AppState)
+            .data(AppData::new())
             .wrap(CookieSession::signed(&private_key).secure(false))
             .wrap(middleware::Compress::new(ContentEncoding::Gzip))
             .service(index)
-            .service(ws::ws_index)
             .service(user::auth::auth)
+            .service(agent::remote::target_validate)
+            .service(agent::remote::target_ssh)
+            .service(agent::ws::ws_index)
             .service(
                 fs::Files::new("/static", STATIC_DIR)
                     .prefer_utf8(true)
