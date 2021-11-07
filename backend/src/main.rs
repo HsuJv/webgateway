@@ -1,14 +1,13 @@
-use std::{collections::HashMap, sync::RwLock};
-
 use actix::Addr;
 use actix_files as fs;
 use actix_session::CookieSession;
 use actix_web::http::{ContentEncoding, StatusCode};
 use actix_web::*;
 
-use agent::{agent::Agent, resolver::DnsResolver};
+use agent::{agent::AgentManager, resolver::DnsResolver};
 use log::info;
 use rand::Rng;
+use user::auth::Authenticator;
 
 mod agent;
 mod user;
@@ -19,15 +18,17 @@ const PAGE_NOT_FOUND: &str = "./static/p404.html";
 
 pub struct AppData {
     // session: CookieSession,
-    resolver: Addr<DnsResolver>,
-    agents: RwLock<HashMap<u32, Addr<Agent>>>,
+    resolver: DnsResolver,
+    authenticator: Addr<Authenticator>,
+    agents: Addr<AgentManager>,
 }
 
 impl AppData {
     pub fn new() -> Self {
         Self {
             resolver: DnsResolver::new(),
-            agents: RwLock::new(HashMap::new()),
+            authenticator: Authenticator::new(),
+            agents: AgentManager::new(),
         }
     }
 }

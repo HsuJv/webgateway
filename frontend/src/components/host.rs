@@ -131,6 +131,7 @@ impl Component for Host {
             <label for="hostname">{"Hostname: "}</label>
             <input id="hostname" type="text" placeholder="hostname" onchange={updatehost} />
             <br />
+            <label for="port">{"    Port: "}</label>
             <input id="port" type="text" placeholder="port" onchange={updateport}/>
             <br />
             <button onclick={connecthost}>{"Connect"}</button>

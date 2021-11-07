@@ -15,16 +15,28 @@ repository = "https://www.github.com/HsuJv/webgateway"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix = "0.10.0"
+tokio = {version="1.13.0", feature="io-util"}
+tokio-io = "0.1.13"
+tokio-core = "0.1.18"
+tokio-codec = "0.1.2"
+tokio-util = "0.6.9"
+
+actix = "0.10"
 actix-session = "0.4"
 actix-web = "3.3.2"
 actix-files = "0.5.0"
 actix-web-actors = "3.0.0"
+actix-codec = "0.4"
+
 urlencoding = "2.1.0"
+bytes = "1.1.0"
 serde = "1.0"
 serde_json = "1.0"
 trust-dns-resolver = "0.20"
 rand = "0.8"
+
+futures = "0.3.17"
+futures-util= "0.3"
 
 # log systems
 femme = "1.3"

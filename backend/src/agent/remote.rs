@@ -6,7 +6,6 @@ use serde_json::json;
 use log::info;
 use rand::Rng;
 
-use crate::agent::resolver::*;
 use crate::AppData;
 
 use super::agent;
@@ -28,10 +27,10 @@ pub async fn target_validate(
 ) -> Result<HttpResponse, Error> {
     let remote = params.into_inner();
     info!("{:?}", remote);
-    let resolved = data.resolver.send(ResolveMsg::Resolve(remote.host)).await;
+    // let resolved = data.resolver.send(ResolveMsg::Resolve(remote.host)).await;
 
-    match resolved.unwrap() {
-        ResolveResp::Success(ipaddr) => {
+    match data.resolver.lockup(remote.host).await {
+        Some(ipaddr) => {
             let json = json!({
                 "status": "success",
                 "ip": ipaddr
@@ -48,6 +47,7 @@ pub async fn target_validate(
     }
 }
 
+const SSH_VER: &str = "SSH-2.0-OpenSSH_7.4p1 Ubuntu-4ubuntu2.1";
 #[post("/target/ssh")]
 pub async fn target_ssh(
     session: Session,
@@ -56,17 +56,18 @@ pub async fn target_ssh(
 ) -> Result<HttpResponse, Error> {
     let aid = rand::thread_rng().gen::<u32>();
     let remote = params.into_inner();
-    let agent = agent::Agent::new(aid);
+    let agent = agent::Agent::new(aid, (remote.ip, remote.port)).await;
 
-    match agent
-        .send(agent::AgentMsg::ConnectServer(
-            format!("{}:{}", remote.ip, remote.port).parse().unwrap(),
-        ))
-        .await
-    {
-        Ok(agent::AgentResp::Success) => {
+    match agent {
+        Some(addr) => {
+            let _ = addr
+                .send(agent::AgentMsg::SendToServer(SSH_VER.to_string()))
+                .await;
             // add to agent list
-            data.agents.write().unwrap().insert(aid, agent);
+            let _ = data
+                .agents
+                .send(agent::AgentManagerMsg::Add((aid, addr)))
+                .await;
 
             // add session, so that the websocket can send message to the agent
             let _ = session.set::<u32>("aid", aid);

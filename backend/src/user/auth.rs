@@ -1,22 +1,23 @@
-use actix::{Actor, Context, Handler, Message, MessageResponse};
-use actix_session::Session;
+use actix::{Actor, Addr, Context, Handler, Message, MessageResponse};
 use actix_web::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use log::info;
 
+use crate::AppData;
+
 #[derive(MessageResponse)]
 #[allow(dead_code)]
-enum AuthResp {
+enum AuthResult {
     AuthSuccess,
     AuthFailure,
 }
 
 #[derive(Message)]
-#[rtype(result = "AuthResp")]
+#[rtype(result = "AuthResult")]
 enum AuthMsg {
-    DoAuth,
+    DoAuth(AuthInfo),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -25,12 +26,19 @@ pub struct AuthInfo {
     password: String,
 }
 
-impl Actor for AuthInfo {
+pub struct Authenticator;
+
+impl Authenticator {
+    pub fn new() -> Addr<Self> {
+        Self {}.start()
+    }
+}
+
+impl Actor for Authenticator {
     type Context = Context<Self>;
 
     fn started(&mut self, _ctx: &mut Self::Context) {
         info!("AuthInfo started");
-        info!("{:?}", self);
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
@@ -38,23 +46,32 @@ impl Actor for AuthInfo {
     }
 }
 
-impl Handler<AuthMsg> for AuthInfo {
-    type Result = AuthResp;
+impl Handler<AuthMsg> for Authenticator {
+    type Result = AuthResult;
 
-    fn handle(&mut self, _msg: AuthMsg, _ctx: &mut Context<Self>) -> Self::Result {
-        info!("AuthInfo handle");
-        AuthResp::AuthSuccess
+    fn handle(&mut self, msg: AuthMsg, _ctx: &mut Context<Self>) -> Self::Result {
+        match msg {
+            AuthMsg::DoAuth(auth_info) => {
+                if auth_info.username == "admin" && auth_info.password == "admin" {
+                    AuthResult::AuthSuccess
+                } else {
+                    AuthResult::AuthFailure
+                }
+            }
+        }
     }
 }
 
 #[post("/auth")]
-pub async fn auth(params: web::Json<AuthInfo>) -> Result<HttpResponse, Error> {
-    let auth = params.into_inner();
-    let auth_addr = auth.start();
-    let res = auth_addr.send(AuthMsg::DoAuth).await;
+pub async fn auth(
+    params: web::Json<AuthInfo>,
+    data: web::Data<AppData>,
+) -> Result<HttpResponse, Error> {
+    let auth_info = params.into_inner();
+    let res = data.authenticator.send(AuthMsg::DoAuth(auth_info)).await;
 
     match res {
-        Ok(AuthResp::AuthSuccess) => Ok(HttpResponse::Ok().json(json!({
+        Ok(AuthResult::AuthSuccess) => Ok(HttpResponse::Ok().json(json!({
             "status": "success",
         }))),
         _ => Ok(HttpResponse::Ok().json(json!({

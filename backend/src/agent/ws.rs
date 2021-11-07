@@ -7,9 +7,9 @@ use log::*;
 
 use crate::AppData;
 
-use super::agent::Agent;
+use super::agent::{Agent, AgentManagerMsg, AgentManagerResult};
 
-/// Define HTTP actor
+/// Define Websocket actor
 struct WsSession {
     agent: Addr<Agent>,
 }
@@ -38,8 +38,13 @@ pub async fn ws_index(
     stream: web::Payload,
 ) -> Result<HttpResponse, Error> {
     let aid = session.get::<u32>("aid").unwrap_or(Some(0)).unwrap();
-    let agent = data.agents.read().unwrap().get(&aid).unwrap().clone();
-    let resp = ws::start(WsSession { agent }, &req, stream);
+
+    let resp = match data.agents.send(AgentManagerMsg::Get(aid)).await.unwrap() {
+        AgentManagerResult::Success(agent) => ws::start(WsSession { agent }, &req, stream),
+        _ => Err(Error::from(actix_web::error::ErrorInternalServerError(
+            "Agent not found",
+        ))),
+    };
 
     match &resp {
         Ok(resp) => info!("{:?}", resp),
