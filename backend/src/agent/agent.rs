@@ -1,12 +1,11 @@
+use crate::agent::ws;
 use actix::prelude::*;
 use actix_codec::{Decoder, Encoder};
 use actix_web::web::Bytes;
 use bytes::BytesMut;
-use futures::stream::*;
+use std::collections::HashMap;
 use std::io;
-use std::{collections::HashMap, task::Poll};
 use tokio::net::{tcp::OwnedWriteHalf, TcpStream};
-use tokio::runtime::{self, Runtime};
 use tokio_util::codec::FramedRead;
 
 use log::*;
@@ -16,7 +15,7 @@ struct TcpCodec;
 impl Encoder<Bytes> for TcpCodec {
     type Error = io::Error;
 
-    fn encode(&mut self, item: Bytes, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: Bytes, _dst: &mut BytesMut) -> Result<(), Self::Error> {
         info!("encoding: {:?}", item);
         Ok(())
     }
@@ -32,25 +31,21 @@ impl Decoder for TcpCodec {
     }
 }
 
-#[derive(MessageResponse)]
-pub enum AgentResult {
-    Success,
-    Failed,
-}
-
 #[derive(Message)]
-#[rtype(result = "AgentResult")]
+#[rtype(result = "()")]
 pub enum AgentMsg {
-    ReadReady,
-    SendToServer(String),
+    Ready(Addr<ws::WsSession>),
+    SendToServer(Bytes),
     SendToClient(Bytes),
+    Shutdown,
 }
 
 pub struct Agent {
     id: u32,
     server_info: String,
     writer: OwnedWriteHalf,
-    runtime: Runtime,
+    ws_addr: Option<Addr<ws::WsSession>>,
+    pending: Vec<Bytes>,
 }
 
 impl Actor for Agent {
@@ -63,24 +58,54 @@ impl Actor for Agent {
 }
 
 impl Handler<AgentMsg> for Agent {
-    type Result = AgentResult;
+    type Result = ();
 
     fn handle(&mut self, msg: AgentMsg, _ctx: &mut Context<Self>) -> Self::Result {
         match msg {
-            AgentMsg::SendToServer(data) => {
-                self.writer.try_write(data.as_bytes()).unwrap();
-                AgentResult::Success
+            AgentMsg::Ready(ws_addr) => {
+                self.ws_addr = Some(ws_addr);
+                info!("Agent {} - Websocket connect ready", self.server_info);
+                for msg in self.pending.drain(..) {
+                    self.ws_addr
+                        .as_ref()
+                        .unwrap()
+                        .do_send(ws::WsMsg::SendToClient(msg));
+                }
             }
-            AgentMsg::SendToClient(_data) => panic!("unexpected message"),
+            AgentMsg::SendToServer(data) => {
+                let to_send = data.to_vec();
+                self.writer.try_write(&to_send).unwrap();
+            }
+            AgentMsg::SendToClient(data) => {
+                if self.ws_addr.is_some() {
+                    self.ws_addr
+                        .as_ref()
+                        .unwrap()
+                        .do_send(ws::WsMsg::SendToClient(data));
+                }
+            }
             _ => panic!("unexpected message"),
         }
     }
 }
 
-impl StreamHandler<Bytes> for Agent {
-    fn handle(&mut self, msg: Bytes, ctx: &mut Context<Self>) {
-        info!("recv from server: {:?}", msg);
-        ctx.address().do_send(AgentMsg::SendToClient(msg));
+impl StreamHandler<Result<Bytes, io::Error>> for Agent {
+    fn handle(&mut self, msg: Result<Bytes, io::Error>, ctx: &mut Context<Self>) {
+        match msg {
+            Ok(data) => {
+                info!("recv from server: {:?}", data);
+                if self.ws_addr.is_some() {
+                    ctx.address().do_send(AgentMsg::SendToClient(data));
+                } else {
+                    info!("Websocket session not ready");
+                    self.pending.push(data);
+                }
+            }
+            Err(err) => {
+                error!("error: {:?}", err);
+                ctx.address().do_send(AgentMsg::Shutdown);
+            }
+        }
     }
 }
 
@@ -89,44 +114,21 @@ impl Agent {
         let (host, port) = target;
         let server_info = format!("{}:{}", host, port);
         info!("connect to server: {}", server_info);
+        let server_stream = TcpStream::connect(&server_info).await;
+        if server_stream.is_err() {
+            info!("connect to server failed: {}", server_info);
+        }
+        let server_stream = server_stream.unwrap();
         let addr = Agent::create(move |ctx| {
-            let mut builder = runtime::Builder::new_current_thread();
-            builder.enable_all();
-
-            let runtime = builder.build().unwrap();
-
-            let server_stream = runtime.block_on(TcpStream::connect(&server_info));
-
-            if server_stream.is_err() {
-                info!("connect to server failed: {}", server_info);
-            }
-            let server_stream = server_stream.unwrap();
             let (r, w) = server_stream.into_split();
-            // let r = FramedRead::new(r, TcpCodec {});
-            let xx = poll_fn(move |_a| {
-                let mut buf = [0; 16384];
-                match r.try_read(&mut buf) {
-                    Ok(n) => {
-                        if n == 0 {
-                            return Poll::Pending;
-                        }
-                        return Poll::Ready(Some(Bytes::from(buf[..n].to_vec())));
-                    }
-                    Err(e) => {
-                        error!("error: {}", e);
-                        if e.kind() == io::ErrorKind::WouldBlock {
-                            return Poll::Pending;
-                        }
-                        return Poll::Ready(None);
-                    }
-                };
-            });
-            Agent::add_stream(xx, ctx);
+            let r = FramedRead::new(r, TcpCodec {});
+            Agent::add_stream(r, ctx);
             Self {
                 id,
                 server_info,
                 writer: w,
-                runtime,
+                ws_addr: None,
+                pending: vec![],
             }
         });
         Some(addr)

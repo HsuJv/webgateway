@@ -63,7 +63,7 @@ async fn main() -> std::io::Result<()> {
     let private_key = rand::thread_rng().gen::<[u8; 32]>();
     HttpServer::new(move || {
         App::new()
-            .data(AppData::new())
+            .app_data(AppData::new())
             .wrap(CookieSession::signed(&private_key).secure(false))
             .wrap(middleware::Compress::new(ContentEncoding::Gzip))
             .service(index)

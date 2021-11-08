@@ -57,7 +57,6 @@
 // }
 use std::net::IpAddr;
 
-use tokio::runtime::{self, Runtime};
 use trust_dns_resolver::{
     config::*,
     name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime},
@@ -68,7 +67,6 @@ use log::*;
 
 pub struct DnsResolver {
     resolver: AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>,
-    runtime: Runtime,
 }
 
 impl DnsResolver {
@@ -80,19 +78,13 @@ impl DnsResolver {
         )
         .unwrap();
 
-        let mut builder = runtime::Builder::new_current_thread();
-        builder.enable_all();
-
-        let runtime = builder.build().unwrap();
-
-        Self { resolver, runtime }
+        Self { resolver }
     }
 
     pub async fn lockup(&self, name: String) -> Option<IpAddr> {
         let lookup = self.resolver.lookup_ip(name.clone());
 
-        // todo!("work out how to run it async");
-        if let Ok(response) = self.runtime.block_on(lookup) {
+        if let Ok(response) = lookup.await {
             if let Some(address) = response.iter().next() {
                 info!("Resolved {} to {}", name, address);
                 Some(address)

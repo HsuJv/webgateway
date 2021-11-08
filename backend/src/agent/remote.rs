@@ -47,7 +47,6 @@ pub async fn target_validate(
     }
 }
 
-const SSH_VER: &str = "SSH-2.0-OpenSSH_7.4p1 Ubuntu-4ubuntu2.1";
 #[post("/target/ssh")]
 pub async fn target_ssh(
     session: Session,
@@ -60,9 +59,6 @@ pub async fn target_ssh(
 
     match agent {
         Some(addr) => {
-            let _ = addr
-                .send(agent::AgentMsg::SendToServer(SSH_VER.to_string()))
-                .await;
             // add to agent list
             let _ = data
                 .agents
@@ -70,7 +66,7 @@ pub async fn target_ssh(
                 .await;
 
             // add session, so that the websocket can send message to the agent
-            let _ = session.set::<u32>("aid", aid);
+            let _ = session.insert("aid", aid);
 
             // send response
             let json = json!({
