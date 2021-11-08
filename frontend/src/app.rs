@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::components::auth;
-use crate::pages::{page_home::PageHome, page_not_found::PageNotFound, page_ssh::PageSsh};
+use crate::pages::{page_home::PageHome, page_not_found::PageNotFound};
 use yew::html::IntoPropValue;
 use yew::prelude::*;
 use yew::services::ConsoleService;
@@ -13,8 +13,8 @@ use yew_router::{router::Router, Switch};
 enum AppRoute {
     // #[at("/ssh/:id")]
     // Ssh(i32),
-    #[to = "/ssh"]
-    Ssh,
+    // #[to = "/ssh"]
+    // Ssh,
     #[to = "/!"]
     Home,
     #[to = ""]
@@ -24,7 +24,7 @@ enum AppRoute {
 impl From<AppRoute> for &str {
     fn from(route: AppRoute) -> Self {
         match route {
-            AppRoute::Ssh => "/ssh",
+            // AppRoute::Ssh => "/ssh",
             _ => "/",
         }
     }
@@ -113,9 +113,9 @@ impl App {
                     <RouterAnchor<AppRoute> classes="navbar-item" route=AppRoute::Home>
                         { "Home" }
                     </RouterAnchor<AppRoute>>
-                    <RouterAnchor<AppRoute> classes="navbar-item" route=AppRoute::Ssh>
-                        { "Ssh" }
-                    </RouterAnchor<AppRoute>>
+                    // <RouterAnchor<AppRoute> classes="navbar-item" route=AppRoute::Ssh>
+                    //     { "Ssh" }
+                    // </RouterAnchor<AppRoute>>
                 </div>
             </nav>
         }
@@ -127,9 +127,9 @@ impl App {
             // Route::Ssh(ip) => {
             //     html! { <Ssh /> }
             // }
-            AppRoute::Ssh => {
-                html! {<PageSsh />}
-            }
+            // AppRoute::Ssh => {
+            //     html! {<PageSsh />}
+            // }
             AppRoute::Home => {
                 html! {<PageHome />}
             }

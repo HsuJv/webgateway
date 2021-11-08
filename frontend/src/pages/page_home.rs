@@ -14,7 +14,7 @@ impl Component for PageHome {
 
     fn view(&self) -> Html {
         html! {
-            "Hello world"
+            <crate::pages::page_remote::PageRemote/>
         }
     }
 

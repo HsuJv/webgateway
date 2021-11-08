@@ -10,7 +10,7 @@ use yew::{
 
 use crate::components;
 
-pub struct PageSsh {
+pub struct PageRemote {
     link: ComponentLink<Self>,
     target: (String, u16),
     error_msg: String,
@@ -18,19 +18,19 @@ pub struct PageSsh {
     connected: bool,
 }
 
-pub enum SshMsg {
-    SshConnect((String, u16)),
-    SshConnectResp(Result<Value, anyhow::Error>),
-    SshConnected,
-    SshRecv(Vec<u8>),
+pub enum RemoteMsg {
+    Connect((String, u16)),
+    ConnectResp(Result<Value, anyhow::Error>),
+    Connected,
+    Recv(Vec<u8>),
 }
 
-impl Component for PageSsh {
-    type Message = SshMsg;
+impl Component for PageRemote {
+    type Message = RemoteMsg;
     type Properties = ();
 
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
-        PageSsh {
+        PageRemote {
             link,
             target: (String::from(""), 0),
             error_msg: String::from(""),
@@ -41,7 +41,7 @@ impl Component for PageSsh {
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
-            SshMsg::SshConnect(target) => {
+            RemoteMsg::Connect(target) => {
                 self.target = target;
                 // ConsoleService::log(&self.target);
                 let to_post = json!({
@@ -50,7 +50,7 @@ impl Component for PageSsh {
                 });
 
                 // 1. build the request
-                let request = Request::post("/target/ssh")
+                let request = Request::post("/target/remote")
                     .header("Content-Type", "application/json")
                     .body(Json(&to_post))
                     .expect("Could not build auth request.");
@@ -60,7 +60,7 @@ impl Component for PageSsh {
                         .callback(|response: Response<Json<Result<Value, anyhow::Error>>>| {
                             // ConsoleService::error(&format!("{:?}", response));
                             let Json(data) = response.into_body();
-                            SshMsg::SshConnectResp(data)
+                            RemoteMsg::ConnectResp(data)
                         });
                 // 3. pass the request and callback to the fetch service
                 let task = FetchService::fetch(request, callback).expect("failed to start request");
@@ -68,12 +68,12 @@ impl Component for PageSsh {
                 self.fetch_task = Some(task);
                 true
             }
-            SshMsg::SshConnectResp(response) => {
+            RemoteMsg::ConnectResp(response) => {
                 if let Ok(response) = response {
                     self.error_msg = response["status"].to_string();
 
                     if "\"success\"" == self.error_msg {
-                        self.link.send_message(SshMsg::SshConnected);
+                        self.link.send_message(RemoteMsg::Connected);
                     } else {
                         self.error_msg = response["message"].to_string();
                     }
@@ -85,11 +85,11 @@ impl Component for PageSsh {
                 self.fetch_task = None;
                 true
             }
-            SshMsg::SshConnected => {
+            RemoteMsg::Connected => {
                 self.connected = true;
                 true
             }
-            SshMsg::SshRecv(v) => {
+            RemoteMsg::Recv(v) => {
                 self.error_msg = String::from_utf8(v).unwrap();
                 true
             }
@@ -102,15 +102,15 @@ impl Component for PageSsh {
 
     fn view(&self) -> Html {
         if !self.connected {
-            let connect_ssh = self.link.callback(SshMsg::SshConnect);
+            let connect_remote = self.link.callback(RemoteMsg::Connect);
             html! {
                 <>
-                    <components::host::Host onsubmit=connect_ssh/>
+                    <components::host::Host onsubmit=connect_remote/>
                     {self.error_msg.clone()}
                 </>
             }
         } else {
-            let recv_msg = self.link.callback(|v| SshMsg::SshRecv(v));
+            let recv_msg = self.link.callback(|v| RemoteMsg::Recv(v));
             html! {
                 <>
                     <components::ws::WebsocketCtx

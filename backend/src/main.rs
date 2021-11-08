@@ -72,7 +72,7 @@ async fn main() -> std::io::Result<()> {
             .service(index)
             .service(user::auth::auth)
             .service(agent::remote::target_validate)
-            .service(agent::remote::target_ssh)
+            .service(agent::remote::target_remote)
             .service(agent::ws::ws_index)
             .service(
                 fs::Files::new("/static", STATIC_DIR)

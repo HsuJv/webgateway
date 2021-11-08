@@ -47,8 +47,8 @@ pub async fn target_validate(
     }
 }
 
-#[post("/target/ssh")]
-pub async fn target_ssh(
+#[post("/target/remote")]
+pub async fn target_remote(
     req: HttpRequest,
     session: Session,
     params: web::Json<RemoteInfo>,
