@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix_session::Session;
 use actix_web::*;
 use serde::{Deserialize, Serialize};
@@ -5,8 +7,6 @@ use serde_json::json;
 
 use log::info;
 use rand::Rng;
-
-use crate::AppData;
 
 use super::agent;
 
@@ -22,14 +22,14 @@ pub struct RemoteInfo {
 
 #[post("/target/validate")]
 pub async fn target_validate(
-    data: web::Data<AppData>,
+    req: HttpRequest,
     params: web::Json<RemoteInfo>,
 ) -> Result<HttpResponse, Error> {
     let remote = params.into_inner();
     info!("{:?}", remote);
-    // let resolved = data.resolver.send(ResolveMsg::Resolve(remote.host)).await;
+    let app_data = req.app_data::<Arc<crate::AppData>>().unwrap();
 
-    match data.resolver.lockup(remote.host).await {
+    match app_data.resolver.lockup(remote.host).await {
         Some(ipaddr) => {
             let json = json!({
                 "status": "success",
@@ -49,18 +49,19 @@ pub async fn target_validate(
 
 #[post("/target/ssh")]
 pub async fn target_ssh(
+    req: HttpRequest,
     session: Session,
-    data: web::Data<AppData>,
     params: web::Json<RemoteInfo>,
 ) -> Result<HttpResponse, Error> {
     let aid = rand::thread_rng().gen::<u32>();
+    let app_data = req.app_data::<Arc<crate::AppData>>().unwrap();
     let remote = params.into_inner();
     let agent = agent::Agent::new(aid, (remote.ip, remote.port)).await;
 
     match agent {
         Some(addr) => {
             // add to agent list
-            let _ = data
+            let _ = app_data
                 .agents
                 .send(agent::AgentManagerMsg::Add((aid, addr)))
                 .await;

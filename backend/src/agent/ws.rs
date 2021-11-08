@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix::{Actor, Addr, Message, StreamHandler};
 use actix::{AsyncContext, Handler};
 use actix_session::Session;
@@ -6,8 +8,6 @@ use actix_web::*;
 use actix_web::{web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use log::*;
-
-use crate::AppData;
 
 use super::agent::*;
 
@@ -63,12 +63,17 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 pub async fn ws_index(
     req: HttpRequest,
     session: Session,
-    data: web::Data<AppData>,
     stream: web::Payload,
 ) -> Result<HttpResponse, Error> {
     let aid = session.get::<u32>("aid").unwrap_or(Some(0)).unwrap();
+    let app_data = req.app_data::<Arc<crate::AppData>>().unwrap();
 
-    let resp = match data.agents.send(AgentManagerMsg::Get(aid)).await.unwrap() {
+    let resp = match app_data
+        .agents
+        .send(AgentManagerMsg::Get(aid))
+        .await
+        .unwrap()
+    {
         AgentManagerResult::Success(agent) => ws::start(WsSession { agent }, &req, stream),
         _ => Err(Error::from(actix_web::error::ErrorInternalServerError(
             "Agent not found",

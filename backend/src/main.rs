@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix::Addr;
 use actix_files as fs;
 use actix_session::CookieSession;
@@ -61,9 +63,10 @@ async fn main() -> std::io::Result<()> {
 
     info!("Server starts at http://127.0.0.1:8080");
     let private_key = rand::thread_rng().gen::<[u8; 32]>();
+    let app_data = Arc::new(AppData::new());
     HttpServer::new(move || {
         App::new()
-            .app_data(AppData::new())
+            .app_data(app_data.clone())
             .wrap(CookieSession::signed(&private_key).secure(false))
             .wrap(middleware::Compress::new(ContentEncoding::Gzip))
             .service(index)

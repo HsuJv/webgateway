@@ -27,7 +27,12 @@ impl Decoder for TcpCodec {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         info!("recv from server: {:?}", src);
-        Ok(Some(Bytes::from(src.to_vec())))
+        if 0 == src.len() {
+            return Ok(None);
+        }
+        let web_bytes = Bytes::from(src.to_vec());
+        src.clear();
+        Ok(Some(web_bytes))
     }
 }
 
@@ -181,10 +186,12 @@ impl Handler<AgentManagerMsg> for AgentManager {
     fn handle(&mut self, msg: AgentManagerMsg, _ctx: &mut Context<Self>) -> Self::Result {
         match msg {
             AgentManagerMsg::Add(addr) => {
+                info!("add agent: {:?}", addr.0);
                 self.agents.insert(addr.0, addr.1);
                 AgentManagerResult::NoReturn
             }
             AgentManagerMsg::Get(aid) => {
+                info!("get agent: {}", aid);
                 if let Some(addr) = self.agents.get(&aid) {
                     AgentManagerResult::Success(addr.clone())
                 } else {

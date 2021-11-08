@@ -22,6 +22,7 @@ pub enum SshMsg {
     SshConnect((String, u16)),
     SshConnectResp(Result<Value, anyhow::Error>),
     SshConnected,
+    SshRecv(Vec<u8>),
 }
 
 impl Component for PageSsh {
@@ -88,6 +89,10 @@ impl Component for PageSsh {
                 self.connected = true;
                 true
             }
+            SshMsg::SshRecv(v) => {
+                self.error_msg = String::from_utf8(v).unwrap();
+                true
+            }
         }
     }
 
@@ -96,8 +101,8 @@ impl Component for PageSsh {
     }
 
     fn view(&self) -> Html {
-        let connect_ssh = self.link.callback(SshMsg::SshConnect);
         if !self.connected {
+            let connect_ssh = self.link.callback(SshMsg::SshConnect);
             html! {
                 <>
                     <components::host::Host onsubmit=connect_ssh/>
@@ -105,8 +110,13 @@ impl Component for PageSsh {
                 </>
             }
         } else {
+            let recv_msg = self.link.callback(|v| SshMsg::SshRecv(v));
             html! {
-                <></>
+                <>
+                    <components::ws::WebsocketCtx
+                        onrecv=recv_msg/>
+                    {self.error_msg.clone()}
+                </>
             }
         }
     }

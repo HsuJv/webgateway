@@ -1,11 +1,11 @@
+use std::sync::Arc;
+
 use actix::{Actor, Addr, Context, Handler, Message, MessageResponse};
 use actix_web::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use log::info;
-
-use crate::AppData;
 
 #[derive(MessageResponse)]
 #[allow(dead_code)]
@@ -63,12 +63,13 @@ impl Handler<AuthMsg> for Authenticator {
 }
 
 #[post("/auth")]
-pub async fn auth(
-    params: web::Json<AuthInfo>,
-    data: web::Data<AppData>,
-) -> Result<HttpResponse, Error> {
+pub async fn auth(params: web::Json<AuthInfo>, req: HttpRequest) -> Result<HttpResponse, Error> {
     let auth_info = params.into_inner();
-    let res = data.authenticator.send(AuthMsg::DoAuth(auth_info)).await;
+    let app_data = req.app_data::<Arc<crate::AppData>>().unwrap();
+    let res = app_data
+        .authenticator
+        .send(AuthMsg::DoAuth(auth_info))
+        .await;
 
     match res {
         Ok(AuthResult::AuthSuccess) => Ok(HttpResponse::Ok().json(json!({
