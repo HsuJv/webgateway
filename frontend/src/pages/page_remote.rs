@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use yew::{
     format::Json,
+    html,
     prelude::*,
     services::{
         fetch::{FetchTask, Request, Response},
@@ -8,7 +9,12 @@ use yew::{
     },
 };
 
-use crate::components;
+use crate::components::ws::WebsocketMsg;
+use crate::{
+    components,
+    protocal::{common::*, vnc::VncHandler},
+    utils::WeakComponentLink,
+};
 
 pub struct PageRemote {
     link: ComponentLink<Self>,
@@ -16,18 +22,24 @@ pub struct PageRemote {
     error_msg: String,
     fetch_task: Option<FetchTask>,
     connected: bool,
+    handler: ProtocalHandler<VncHandler>,
+    ws_link: WeakComponentLink<components::ws::WebsocketCtx>,
 }
+
+#[derive(Clone, PartialEq, Properties)]
+pub struct RemoteProps {}
 
 pub enum RemoteMsg {
     Connect((String, u16)),
     ConnectResp(Result<Value, anyhow::Error>),
     Connected,
     Recv(Vec<u8>),
+    Send(Vec<u8>),
 }
 
 impl Component for PageRemote {
     type Message = RemoteMsg;
-    type Properties = ();
+    type Properties = RemoteProps;
 
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
         PageRemote {
@@ -36,6 +48,8 @@ impl Component for PageRemote {
             error_msg: String::from(""),
             fetch_task: None,
             connected: false,
+            handler: ProtocalHandler::new(),
+            ws_link: WeakComponentLink::default(),
         }
     }
 
@@ -90,8 +104,26 @@ impl Component for PageRemote {
                 true
             }
             RemoteMsg::Recv(v) => {
-                self.error_msg = String::from_utf8(v).unwrap();
-                true
+                let out = self.handler.handle(&v);
+                match out {
+                    ProtocalHandlerOutput::Err(err) => {
+                        self.error_msg = err.clone();
+                        true
+                    }
+                    ProtocalHandlerOutput::Ok => false,
+                    ProtocalHandlerOutput::WsBuf(out) => {
+                        self.link.send_message(RemoteMsg::Send(out));
+                        false
+                    }
+                }
+            }
+            RemoteMsg::Send(v) => {
+                self.ws_link
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .send_message(WebsocketMsg::Send(Ok(v)));
+                false
             }
         }
     }
@@ -111,10 +143,11 @@ impl Component for PageRemote {
             }
         } else {
             let recv_msg = self.link.callback(|v| RemoteMsg::Recv(v));
+            let ws_link = &self.ws_link;
             html! {
                 <>
                     <components::ws::WebsocketCtx
-                        onrecv=recv_msg/>
+                    weak_link=ws_link onrecv=recv_msg/>
                     {self.error_msg.clone()}
                 </>
             }

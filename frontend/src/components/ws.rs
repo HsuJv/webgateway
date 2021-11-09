@@ -3,6 +3,8 @@ use yew::services::websocket::{WebSocketService, WebSocketStatus, WebSocketTask}
 use yew::services::ConsoleService;
 use yew::{format::Binary, utils::host};
 
+use crate::utils::WeakComponentLink;
+
 pub struct WebsocketCtx {
     ws: Option<WebSocketTask>,
     link: ComponentLink<Self>,
@@ -14,6 +16,7 @@ pub struct WebsocketCtx {
 pub struct WebsocketProps {
     #[prop_or_default]
     pub onrecv: Callback<Vec<u8>>,
+    pub weak_link: WeakComponentLink<WebsocketCtx>,
 }
 
 pub enum WebsocketMsg {
@@ -29,6 +32,7 @@ impl Component for WebsocketCtx {
     type Properties = WebsocketProps;
 
     fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
+        props.weak_link.borrow_mut().replace(link.clone());
         Self {
             ws: None,
             link: link,

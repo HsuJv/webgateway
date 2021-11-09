@@ -1,6 +1,7 @@
 mod app;
 mod components;
 mod pages;
+mod protocal;
 mod utils;
 
 use wasm_bindgen::prelude::*;
