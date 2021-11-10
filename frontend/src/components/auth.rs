@@ -1,3 +1,4 @@
+use super::input::Input;
 use anyhow;
 use serde_json::{json, Value};
 use std::fmt::Debug;
@@ -116,28 +117,19 @@ impl Component for AuthComponents {
     fn view(&self) -> Html {
         let link = &self.link;
 
-        let update_uname = link.callback(|e: ChangeData| match e {
-            ChangeData::Value(val) => AuthMsg::UpdateUsername(val),
-            _ => panic!("unexpected message"),
-        });
+        let update_uname = link.callback(|v| AuthMsg::UpdateUsername(v));
 
-        let update_pword = link.callback(|e: ChangeData| match e {
-            ChangeData::Value(val) => AuthMsg::UpdatePassword(val),
-            _ => panic!("unexpected message"),
-        });
+        let update_pword = link.callback(|v| AuthMsg::UpdatePassword(v));
 
-        let auth_post = link.callback(|_| {
-            // ConsoleService::log("Auth post");
-            AuthMsg::AuthRequest
-        });
+        let auth_post = link.callback(|_| AuthMsg::AuthRequest);
 
         html! {
             <div class="horizontal-centre vertical-centre">
                 <label for="username">{"Username: "}</label>
-                <input id="username" type="text" placeholder="Username" onchange={update_uname} />
+                <Input id="username" type_="text" placeholder="Username" on_change={update_uname} />
                 <br />
                 <label for="password">{"Password: "}</label>
-                <input id="password" type="password" placeholder="Password" onchange={update_pword} />
+                <Input id="password" type_="password" placeholder="Password" on_change={update_pword} />
                 <br />
                 <button type="submit" onclick={auth_post}>{"Login"}</button>
                 <br />

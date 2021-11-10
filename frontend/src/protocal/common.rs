@@ -3,6 +3,8 @@ pub enum ProtocalHandlerOutput {
     Ok,
     WsBuf(Vec<u8>),
     Err(String),
+    RequireUsername,
+    RequirePassword,
 }
 
 pub struct ProtocalHandler<T>
@@ -23,11 +25,16 @@ where
     pub fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
         self.inner.handle(input)
     }
+
+    pub fn set_credential(&mut self, username: &str, password: &str) -> ProtocalHandlerOutput {
+        self.inner.set_credential(username, password)
+    }
 }
 
 pub trait ProtocalImpl {
     fn new() -> Self;
     fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput;
+    fn set_credential(&mut self, username: &str, password: &str) -> ProtocalHandlerOutput;
 }
 
 pub struct StreamReader<'a> {
@@ -73,6 +80,12 @@ impl<'a> StreamReader<'a> {
         Some(Self::read_u32(self).map(|b| b as i32)?)
     }
 
+    pub fn extract_slice(&mut self, len: usize, buf: &mut [u8]) {
+        for x in self.inner.by_ref().take(len).enumerate() {
+            buf[x.0] = *x.1;
+        }
+    }
+
     pub fn read_string_with_len(&mut self, len: usize) -> Option<String> {
         let mut buf = vec![0u8; len as usize];
         self.inner
@@ -85,8 +98,13 @@ impl<'a> StreamReader<'a> {
         Some(String::from_utf8(buf).unwrap())
     }
 
-    pub fn read_string(&mut self) -> Option<String> {
+    pub fn read_string_l16(&mut self) -> Option<String> {
         let len = self.read_u16()? as usize;
+        Some(self.read_string_with_len(len)?)
+    }
+
+    pub fn read_string_l32(&mut self) -> Option<String> {
+        let len = self.read_u32()? as usize;
         Some(self.read_string_with_len(len)?)
     }
 

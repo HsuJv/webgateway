@@ -104,6 +104,7 @@ impl Component for WebsocketCtx {
 
     fn rendered(&mut self, first_render: bool) {
         if first_render && self.ws.is_none() {
+            ConsoleService::log(&format!("Start websocket"));
             self.link.send_message(WebsocketMsg::Connect);
         }
     }

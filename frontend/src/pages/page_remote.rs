@@ -9,9 +9,8 @@ use yew::{
     },
 };
 
-use crate::components::ws::WebsocketMsg;
 use crate::{
-    components,
+    components::{self, input::Input, ws::WebsocketMsg},
     protocal::{common::*, vnc::VncHandler},
     utils::WeakComponentLink,
 };
@@ -24,6 +23,10 @@ pub struct PageRemote {
     connected: bool,
     handler: ProtocalHandler<VncHandler>,
     ws_link: WeakComponentLink<components::ws::WebsocketCtx>,
+    request_username: bool,
+    request_password: bool,
+    username: String,
+    password: String,
 }
 
 #[derive(Clone, PartialEq, Properties)]
@@ -35,6 +38,9 @@ pub enum RemoteMsg {
     Connected,
     Recv(Vec<u8>),
     Send(Vec<u8>),
+    UpdateUsername(String),
+    UpdatePassword(String),
+    SendCredential,
 }
 
 impl Component for PageRemote {
@@ -50,6 +56,10 @@ impl Component for PageRemote {
             connected: false,
             handler: ProtocalHandler::new(),
             ws_link: WeakComponentLink::default(),
+            request_username: false,
+            request_password: false,
+            username: String::from(""),
+            password: String::from(""),
         }
     }
 
@@ -115,6 +125,11 @@ impl Component for PageRemote {
                         self.link.send_message(RemoteMsg::Send(out));
                         false
                     }
+                    ProtocalHandlerOutput::RequirePassword => {
+                        self.request_password = true;
+                        true
+                    }
+                    _ => unimplemented!(),
                 }
             }
             RemoteMsg::Send(v) => {
@@ -124,6 +139,20 @@ impl Component for PageRemote {
                     .unwrap()
                     .send_message(WebsocketMsg::Send(Ok(v)));
                 false
+            }
+            RemoteMsg::UpdateUsername(username) => {
+                self.username = username;
+                true
+            }
+            RemoteMsg::UpdatePassword(password) => {
+                self.password = password;
+                true
+            }
+            RemoteMsg::SendCredential => {
+                self.request_username = false;
+                self.request_password = false;
+                self.handler.set_credential(&self.username, &self.password);
+                true
             }
         }
     }
@@ -146,11 +175,61 @@ impl Component for PageRemote {
             let ws_link = &self.ws_link;
             html! {
                 <>
-                    <components::ws::WebsocketCtx
-                    weak_link=ws_link onrecv=recv_msg/>
-                    {self.error_msg.clone()}
+                    <div class="horizontal-centre vertical-centre">
+                        {self.username_view()}
+                        {self.password_view()}
+                        {self.button_connect_view()}
+                        <components::ws::WebsocketCtx
+                        weak_link=ws_link onrecv=recv_msg/>
+                        {self.error_msg.clone()}
+                    </div>
                 </>
             }
+        }
+    }
+}
+
+// impl PageRemote
+impl PageRemote {
+    fn username_view(&self) -> Html {
+        if self.request_username {
+            let update_username = self.link.callback(|v| RemoteMsg::UpdateUsername(v));
+            html! {
+                <>
+                    <Input id="username" type_="text" placeholder="username" on_change={update_username}/>
+                    <br/>
+                </>
+            }
+        } else {
+            html! {}
+        }
+    }
+
+    fn password_view(&self) -> Html {
+        if self.request_password {
+            let update_password = self.link.callback(|v| RemoteMsg::UpdatePassword(v));
+            html! {
+                <>
+                    <Input id="password" type_="password" placeholder="password" on_change={update_password}/>
+                    <br/>
+                </>
+            }
+        } else {
+            html! {}
+        }
+    }
+
+    fn button_connect_view(&self) -> Html {
+        if self.request_username || self.request_password {
+            let send_credential = self.link.callback(|_| RemoteMsg::SendCredential);
+            html! {
+                <>
+                    <button type="submit" onclick={send_credential}>{"Connect"}</button>
+                    <br/>
+                </>
+            }
+        } else {
+            html! {}
         }
     }
 }
