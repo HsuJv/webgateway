@@ -115,22 +115,7 @@ impl Component for PageRemote {
             }
             RemoteMsg::Recv(v) => {
                 let out = self.handler.handle(&v);
-                match out {
-                    ProtocalHandlerOutput::Err(err) => {
-                        self.error_msg = err.clone();
-                        true
-                    }
-                    ProtocalHandlerOutput::Ok => false,
-                    ProtocalHandlerOutput::WsBuf(out) => {
-                        self.link.send_message(RemoteMsg::Send(out));
-                        false
-                    }
-                    ProtocalHandlerOutput::RequirePassword => {
-                        self.request_password = true;
-                        true
-                    }
-                    _ => unimplemented!(),
-                }
+                self.protocal_out_handler(out)
             }
             RemoteMsg::Send(v) => {
                 self.ws_link
@@ -151,7 +136,8 @@ impl Component for PageRemote {
             RemoteMsg::SendCredential => {
                 self.request_username = false;
                 self.request_password = false;
-                self.handler.set_credential(&self.username, &self.password);
+                let out = self.handler.set_credential(&self.username, &self.password);
+                let _ = self.protocal_out_handler(out);
                 true
             }
         }
@@ -191,6 +177,30 @@ impl Component for PageRemote {
 
 // impl PageRemote
 impl PageRemote {
+    fn protocal_out_handler(&mut self, out: ProtocalHandlerOutput) -> ShouldRender {
+        match out {
+            ProtocalHandlerOutput::Err(err) => {
+                self.error_msg = err.clone();
+                self.ws_link
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .send_message(WebsocketMsg::Disconnected);
+                true
+            }
+            ProtocalHandlerOutput::Ok => false,
+            ProtocalHandlerOutput::WsBuf(out) => {
+                self.link.send_message(RemoteMsg::Send(out));
+                false
+            }
+            ProtocalHandlerOutput::RequirePassword => {
+                self.request_password = true;
+                true
+            }
+            _ => unimplemented!(),
+        }
+    }
+
     fn username_view(&self) -> Html {
         if self.request_username {
             let update_username = self.link.callback(|v| RemoteMsg::UpdateUsername(v));
