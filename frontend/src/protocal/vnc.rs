@@ -1,7 +1,6 @@
-use yew::services::ConsoleService;
-
 use super::common::*;
 use super::des;
+use yew::services::ConsoleService;
 
 const VNC_RFB33: &[u8; 12] = b"RFB 003.003\n";
 const VNC_RFB37: &[u8; 12] = b"RFB 003.007\n";
@@ -13,7 +12,7 @@ const VNC_FAILED: &str = "Connection failed with unknow reason";
 enum VncState {
     Handshake,
     Authentication,
-    ClientInit, // auth done
+    D
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -30,122 +29,30 @@ pub enum SecurityType {
     Invalid = 0,
     None = 1,
     VncAuth = 2,
-    RA2 = 5,
-    RA2ne = 6,
-    Tight = 16,
-    Ultra = 17,
-    TLS = 18,
-    VeNCrypt = 19,
+    // RA2 = 5,
+    // RA2ne = 6,
+    // Tight = 16,
+    // Ultra = 17,
+    // TLS = 18,
+    // VeNCrypt = 19,
 }
 
-#[derive(Debug, Clone)]
 pub struct VncHandler {
-    state: VncState,
-    version: VncVersion,
-    challenge: [u8; 16],
-    security_type: SecurityType,
-    width: u16,
-    height: u16,
-    pf: PixelFormat,
-    name: String,
+    inner: Box<dyn VncStateMachine>,
 }
 
 impl ProtocalImpl for VncHandler {
     fn new() -> Self {
-        VncHandler {
-            state: VncState::Handshake,
-            version: VncVersion::NONE,
-            challenge: [0u8; 16],
-            security_type: SecurityType::Invalid,
-            width: 0,
-            height: 0,
-            pf: PixelFormat::default(),
-            name: String::new(),
+        Self {
+            inner: Box::new(VncHandShake {}),
         }
     }
 
     fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
-        match self.state {
-            VncState::Handshake => {
-                let support_version = self.handle_handshake(input);
-                self.state = VncState::Authentication;
-                if let Ok(support_version) = support_version {
-                    ProtocalHandlerOutput::WsBuf(support_version.into())
-                } else {
-                    ProtocalHandlerOutput::Err(support_version.err().unwrap().to_string())
-                }
-            }
-            VncState::Authentication => {
-                // reuse this state for auth repose handling
-                if self.security_type == SecurityType::VncAuth {
-                    self.handle_auth_response(input)
-                } else {
-                    self.start_authenticate(input)
-                }
-            }
-            VncState::ClientInit => {
-                ConsoleService::log(&format!("{:?}", input));
-                self.handle_server_init(input)
-            }
-            _ => panic!("unsupported version"),
-        }
+        self.inner.handle(input)
     }
 
     fn set_credential(&mut self, _username: &str, password: &str) -> ProtocalHandlerOutput {
-        // ConsoleService::log(&format!("{:?}", password));
-        // ConsoleService::log(&format!("{:?}", self.challenge));
-        // since vnc do not require username, so we just ignore it
-        self.continue_authenticate(password)
-    }
-}
-
-// private methods
-impl VncHandler {
-    fn handle_handshake(&mut self, rfbversion: &[u8]) -> Result<&'static [u8], &'static str> {
-        match rfbversion {
-            b"RFB 003.003\n" => {
-                self.version = VncVersion::VNC33;
-                Ok(VNC_RFB33)
-            }
-            b"RFB 003.007\n" => {
-                self.version = VncVersion::VNC33;
-                Ok(VNC_RFB33)
-            }
-            b"RFB 003.008\n" => {
-                self.version = VncVersion::VNC33;
-                Ok(VNC_RFB33)
-            }
-            _ => Err(VNC_VER_UNSUPPORTED),
-        }
-    }
-    fn start_authenticate(&mut self, auth: &[u8]) -> ProtocalHandlerOutput {
-        let mut sr = StreamReader::new(auth);
-        match sr.read_u32() {
-            Some(0) => {
-                let err_msg = sr.read_string_l32().unwrap();
-                ProtocalHandlerOutput::Err(err_msg)
-            }
-            Some(1) => {
-                self.security_type = SecurityType::None;
-                self.state = VncState::ClientInit;
-                self.client_initialisation()
-            }
-            Some(2) => {
-                self.security_type = SecurityType::VncAuth;
-                sr.extract_slice(16, &mut self.challenge);
-                ProtocalHandlerOutput::RequirePassword
-            }
-            _ => ProtocalHandlerOutput::Err(VNC_FAILED.to_string()),
-        }
-    }
-
-    fn client_initialisation(&mut self) -> ProtocalHandlerOutput {
-        let shared_flag = 1;
-
-        ProtocalHandlerOutput::WsBuf(vec![shared_flag].into())
-    }
-
-    fn continue_authenticate(&mut self, password: &str) -> ProtocalHandlerOutput {
         // referring
         // https://github.com/whitequark/rust-vnc/blob/0697238f2706dd34a9a95c1640e385f6d8c02961/src/client.rs
         // strange behavior
@@ -164,17 +71,95 @@ impl VncHandler {
             }
             pass_bytes[i] = cs;
         }
-        let output = des::encrypt(&self.challenge, &pass_bytes);
-        ProtocalHandlerOutput::WsBuf(output.to_vec())
+        self.inner.handle(&pass_bytes)
+    }
+}
+
+trait VncStateMachine {
+    fn pre(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
+        ProtocalHandlerOutput::Ok
+    }
+    fn handle(&mut self, _input: &[u8]) -> ProtocalHandlerOutput;
+    fn post(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
+        ProtocalHandlerOutput::Ok
+    }
+    fn done(&self) -> bool;
+}
+
+struct VncHandShake;
+
+impl VncStateMachine for VncHandShake {
+    fn handle(&mut self, rfbversion: &[u8]) -> ProtocalHandlerOutput {
+        let support_version = match rfbversion {
+            b"RFB 003.003\n" => Ok(VNC_RFB33),
+            b"RFB 003.007\n" => Ok(VNC_RFB33),
+            b"RFB 003.008\n" => Ok(VNC_RFB33),
+            _ => Err(VNC_VER_UNSUPPORTED),
+        };
+        if let Ok(support_version) = support_version {
+            ProtocalHandlerOutput::WsBuf(support_version.to_vec())
+        } else {
+            ProtocalHandlerOutput::Err(support_version.err().unwrap().to_string())
+        }
+    }
+
+    fn done(&self) -> bool {
+        true
+    }
+}
+
+struct VncAuthentiacator {
+    challenge: [u8; 16],
+    security_type: SecurityType,
+    wait_password: bool,
+    done: bool,
+}
+
+impl VncStateMachine for VncAuthentiacator {
+    fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
+        if self.security_type == SecurityType::VncAuth {
+            self.handle_auth_response(input)
+        } else {
+            self.start_authenticate(input)
+        }
+    }
+
+    fn post(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
+        let shared_flag = 1;
+
+        ProtocalHandlerOutput::WsBuf(vec![shared_flag].into())
+    }
+
+    fn done(&self) -> bool {
+        self.done
+    }
+}
+
+impl VncAuthentiacator {
+    fn start_authenticate(&mut self, auth: &[u8]) -> ProtocalHandlerOutput {
+        let mut sr = StreamReader::new(auth);
+        match sr.read_u32() {
+            Some(0) => {
+                let err_msg = sr.read_string_l32().unwrap();
+                ProtocalHandlerOutput::Err(err_msg)
+            }
+            Some(1) => {
+                self.security_type = SecurityType::None;
+                self.post(&[])
+            }
+            Some(2) => {
+                self.security_type = SecurityType::VncAuth;
+                sr.extract_slice(16, &mut self.challenge);
+                ProtocalHandlerOutput::RequirePassword
+            }
+            _ => ProtocalHandlerOutput::Err(VNC_FAILED.to_string()),
+        }
     }
 
     fn handle_auth_response(&mut self, response: &[u8]) -> ProtocalHandlerOutput {
         let mut sr = StreamReader::new(response);
         match sr.read_u32() {
-            Some(0) => {
-                self.state = VncState::ClientInit;
-                self.client_initialisation()
-            }
+            Some(0) => self.post(&[]),
             Some(1) => {
                 let err_msg = sr.read_string_l32().unwrap();
                 ProtocalHandlerOutput::Err(err_msg)
@@ -183,6 +168,32 @@ impl VncHandler {
         }
     }
 
+    fn continue_authenticate(&mut self, key_: &[u8]) -> ProtocalHandlerOutput {
+        // let key: &[u8; 8] = key_.try_into().unwrap();
+        let key = unsafe { std::mem::transmute(key_.as_ptr()) };
+        let output = des::encrypt(&self.challenge, key);
+        ProtocalHandlerOutput::WsBuf(output.to_vec())
+    }
+}
+
+struct VncDrawing {
+    width: u16,
+    height: u16,
+    pf: PixelFormat,
+    name: String,
+}
+
+impl VncStateMachine for VncDrawing {
+    fn handle(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
+        ProtocalHandlerOutput::Ok
+    }
+
+    fn done(&self) -> bool {
+        false
+    }
+}
+
+impl VncDrawing {
     // example
     // [7, 128, 4, 176, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0, 0, 0, 0, 14, 54, 122, 122, 100, 114, 113, 50, 45, 106, 105, 97, 120, 117, 0]
     // No. of bytes Type            [Value] Description
@@ -201,7 +212,6 @@ impl VncHandler {
         self.pf = (&pfb).into();
         self.name = sr.read_string_l32().unwrap();
 
-        ConsoleService::log(&format!("{:?}", self));
         ProtocalHandlerOutput::Ok
     }
 }
