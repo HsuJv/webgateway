@@ -12,7 +12,6 @@ const VNC_FAILED: &str = "Connection failed with unknow reason";
 enum VncState {
     Handshake,
     Authentication,
-    D
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -44,11 +43,14 @@ pub struct VncHandler {
 impl ProtocalImpl for VncHandler {
     fn new() -> Self {
         Self {
-            inner: Box::new(VncHandShake {}),
+            inner: Box::new(VncHandShake::default()),
         }
     }
 
     fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
+        if self.inner.done() {
+            self.inner = self.inner.next();
+        }
         self.inner.handle(input)
     }
 
@@ -76,17 +78,20 @@ impl ProtocalImpl for VncHandler {
 }
 
 trait VncStateMachine {
-    fn pre(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
-        ProtocalHandlerOutput::Ok
-    }
     fn handle(&mut self, _input: &[u8]) -> ProtocalHandlerOutput;
-    fn post(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
-        ProtocalHandlerOutput::Ok
-    }
     fn done(&self) -> bool;
+    fn next(&self) -> Box<dyn VncStateMachine>;
 }
 
-struct VncHandShake;
+struct VncHandShake {
+    done: bool,
+}
+
+impl Default for VncHandShake {
+    fn default() -> Self {
+        Self { done: false }
+    }
+}
 
 impl VncStateMachine for VncHandShake {
     fn handle(&mut self, rfbversion: &[u8]) -> ProtocalHandlerOutput {
@@ -96,6 +101,7 @@ impl VncStateMachine for VncHandShake {
             b"RFB 003.008\n" => Ok(VNC_RFB33),
             _ => Err(VNC_VER_UNSUPPORTED),
         };
+        self.done = true;
         if let Ok(support_version) = support_version {
             ProtocalHandlerOutput::WsBuf(support_version.to_vec())
         } else {
@@ -104,7 +110,11 @@ impl VncStateMachine for VncHandShake {
     }
 
     fn done(&self) -> bool {
-        true
+        self.done
+    }
+
+    fn next(&self) -> Box<dyn VncStateMachine> {
+        Box::new(VncAuthentiacator::default())
     }
 }
 
@@ -115,23 +125,36 @@ struct VncAuthentiacator {
     done: bool,
 }
 
+impl Default for VncAuthentiacator {
+    fn default() -> Self {
+        Self {
+            challenge: [0u8; 16],
+            security_type: SecurityType::Invalid,
+            wait_password: true,
+            done: false,
+        }
+    }
+}
+
 impl VncStateMachine for VncAuthentiacator {
     fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
         if self.security_type == SecurityType::VncAuth {
-            self.handle_auth_response(input)
+            if self.wait_password {
+                self.continue_authenticate(input)
+            } else {
+                self.handle_auth_response(input)
+            }
         } else {
             self.start_authenticate(input)
         }
     }
 
-    fn post(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
-        let shared_flag = 1;
-
-        ProtocalHandlerOutput::WsBuf(vec![shared_flag].into())
-    }
-
     fn done(&self) -> bool {
         self.done
+    }
+
+    fn next(&self) -> Box<dyn VncStateMachine> {
+        Box::new(VncDrawing::default())
     }
 }
 
@@ -145,10 +168,11 @@ impl VncAuthentiacator {
             }
             Some(1) => {
                 self.security_type = SecurityType::None;
-                self.post(&[])
+                self.send_client_initilize()
             }
             Some(2) => {
                 self.security_type = SecurityType::VncAuth;
+                self.wait_password = true;
                 sr.extract_slice(16, &mut self.challenge);
                 ProtocalHandlerOutput::RequirePassword
             }
@@ -159,7 +183,7 @@ impl VncAuthentiacator {
     fn handle_auth_response(&mut self, response: &[u8]) -> ProtocalHandlerOutput {
         let mut sr = StreamReader::new(response);
         match sr.read_u32() {
-            Some(0) => self.post(&[]),
+            Some(0) => self.send_client_initilize(),
             Some(1) => {
                 let err_msg = sr.read_string_l32().unwrap();
                 ProtocalHandlerOutput::Err(err_msg)
@@ -172,7 +196,14 @@ impl VncAuthentiacator {
         // let key: &[u8; 8] = key_.try_into().unwrap();
         let key = unsafe { std::mem::transmute(key_.as_ptr()) };
         let output = des::encrypt(&self.challenge, key);
+        self.wait_password = false;
         ProtocalHandlerOutput::WsBuf(output.to_vec())
+    }
+
+    fn send_client_initilize(&mut self) -> ProtocalHandlerOutput {
+        let shared_flag = 1;
+        self.done = true;
+        ProtocalHandlerOutput::WsBuf(vec![shared_flag].into())
     }
 }
 
@@ -181,15 +212,37 @@ struct VncDrawing {
     height: u16,
     pf: PixelFormat,
     name: String,
+    server_init: bool,
+}
+
+impl Default for VncDrawing {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            pf: PixelFormat::default(),
+            name: "".to_string(),
+            server_init: false,
+        }
+    }
 }
 
 impl VncStateMachine for VncDrawing {
-    fn handle(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
-        ProtocalHandlerOutput::Ok
+    fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
+        if self.server_init {
+            // ProtocalHandlerOutput::WsBuf(self.get_framebuffer_update_request())
+            self.handle_server_init(input)
+        } else {
+            self.handle_server_init(input)
+        }
     }
 
     fn done(&self) -> bool {
         false
+    }
+
+    fn next(&self) -> Box<dyn VncStateMachine> {
+        Box::new(VncEnds)
     }
 }
 
@@ -211,8 +264,24 @@ impl VncDrawing {
         // This pixel format will be used unless the client requests a different format using the SetPixelFormat message
         self.pf = (&pfb).into();
         self.name = sr.read_string_l32().unwrap();
-
+        ConsoleService::log(&format!("VNC: {}x{}", self.width, self.height));
         ProtocalHandlerOutput::Ok
+    }
+}
+
+struct VncEnds;
+
+impl VncStateMachine for VncEnds {
+    fn handle(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
+        ProtocalHandlerOutput::Err(VNC_FAILED.to_string())
+    }
+
+    fn done(&self) -> bool {
+        false
+    }
+
+    fn next(&self) -> Box<dyn VncStateMachine> {
+        Box::new(VncEnds)
     }
 }
 
