@@ -8,20 +8,6 @@ const VNC_RFB38: &[u8; 12] = b"RFB 003.008\n";
 const VNC_VER_UNSUPPORTED: &str = "unsupported version";
 const VNC_FAILED: &str = "Connection failed with unknow reason";
 
-#[derive(Debug, Clone, Copy)]
-enum VncState {
-    Handshake,
-    Authentication,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum VncVersion {
-    NONE,
-    VNC33,
-    VNC37,
-    VNC38,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SecurityType {
@@ -37,7 +23,7 @@ pub enum SecurityType {
 }
 
 pub struct VncHandler {
-    inner: Box<dyn VncStateMachine>,
+    inner: Box<dyn VncState>,
 }
 
 impl ProtocalImpl for VncHandler {
@@ -75,12 +61,19 @@ impl ProtocalImpl for VncHandler {
         }
         self.inner.handle(&pass_bytes)
     }
+
+    fn require_frame(&mut self, incremental: u8) -> ProtocalHandlerOutput {
+        self.inner.frame_require(incremental)
+    }
 }
 
-trait VncStateMachine {
+trait VncState {
     fn handle(&mut self, _input: &[u8]) -> ProtocalHandlerOutput;
+    fn frame_require(&self, _incremental: u8) -> ProtocalHandlerOutput {
+        ProtocalHandlerOutput::Err(VNC_FAILED.to_string())
+    }
     fn done(&self) -> bool;
-    fn next(&self) -> Box<dyn VncStateMachine>;
+    fn next(&self) -> Box<dyn VncState>;
 }
 
 struct VncHandShake {
@@ -93,7 +86,7 @@ impl Default for VncHandShake {
     }
 }
 
-impl VncStateMachine for VncHandShake {
+impl VncState for VncHandShake {
     fn handle(&mut self, rfbversion: &[u8]) -> ProtocalHandlerOutput {
         let support_version = match rfbversion {
             b"RFB 003.003\n" => Ok(VNC_RFB33),
@@ -113,7 +106,7 @@ impl VncStateMachine for VncHandShake {
         self.done
     }
 
-    fn next(&self) -> Box<dyn VncStateMachine> {
+    fn next(&self) -> Box<dyn VncState> {
         Box::new(VncAuthentiacator::default())
     }
 }
@@ -136,7 +129,7 @@ impl Default for VncAuthentiacator {
     }
 }
 
-impl VncStateMachine for VncAuthentiacator {
+impl VncState for VncAuthentiacator {
     fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
         if self.security_type == SecurityType::VncAuth {
             if self.wait_password {
@@ -153,7 +146,7 @@ impl VncStateMachine for VncAuthentiacator {
         self.done
     }
 
-    fn next(&self) -> Box<dyn VncStateMachine> {
+    fn next(&self) -> Box<dyn VncState> {
         Box::new(VncDrawing::default())
     }
 }
@@ -213,6 +206,9 @@ struct VncDrawing {
     pf: PixelFormat,
     name: String,
     server_init: bool,
+    buffer: Vec<u8>,
+    rects: Vec<VncRect>,
+    num_rects_left: u16,
 }
 
 impl Default for VncDrawing {
@@ -223,17 +219,42 @@ impl Default for VncDrawing {
             pf: PixelFormat::default(),
             name: "".to_string(),
             server_init: false,
+            buffer: Vec::with_capacity(50),
+            rects: Vec::new(),
+            num_rects_left: 0,
         }
     }
 }
 
-impl VncStateMachine for VncDrawing {
+impl VncState for VncDrawing {
     fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput {
         if self.server_init {
-            // ProtocalHandlerOutput::WsBuf(self.get_framebuffer_update_request())
-            self.handle_server_init(input)
+            let mut sr = StreamReader::new(input);
+            if self.num_rects_left > 0 {
+                // still in the previous update frame request
+                self.extract_rects(&mut sr);
+                self.render_rects()
+            } else {
+                let msg_type = sr.read_u8().unwrap();
+
+                match msg_type {
+                    0 => self.handle_framebuffer_update(&mut sr),
+                    1 => self.handle_set_colour_map(&mut sr),
+                    2 => self.handle_bell(&mut sr),
+                    3 => self.handle_server_cut_text(&mut sr),
+                    _ => ProtocalHandlerOutput::Err(VNC_FAILED.to_string()),
+                }
+            }
         } else {
             self.handle_server_init(input)
+        }
+    }
+
+    fn frame_require(&self, incremental: u8) -> ProtocalHandlerOutput {
+        if self.num_rects_left > 0 {
+            ProtocalHandlerOutput::Ok
+        } else {
+            self.framebuffer_update_request(incremental)
         }
     }
 
@@ -241,7 +262,7 @@ impl VncStateMachine for VncDrawing {
         false
     }
 
-    fn next(&self) -> Box<dyn VncStateMachine> {
+    fn next(&self) -> Box<dyn VncState> {
         Box::new(VncEnds)
     }
 }
@@ -256,22 +277,196 @@ impl VncDrawing {
     // 4            CARD32          name-length
     // name-length  CARD8           array name-string
     fn handle_server_init(&mut self, init: &[u8]) -> ProtocalHandlerOutput {
-        let mut sr = StreamReader::new(init);
-        self.width = sr.read_u16().unwrap();
-        self.height = sr.read_u16().unwrap();
-        let mut pfb: [u8; 16] = [0u8; 16];
-        sr.extract_slice(16, &mut pfb);
-        // This pixel format will be used unless the client requests a different format using the SetPixelFormat message
-        self.pf = (&pfb).into();
-        self.name = sr.read_string_l32().unwrap();
-        ConsoleService::log(&format!("VNC: {}x{}", self.width, self.height));
-        ProtocalHandlerOutput::Ok
+        self.buffer.extend_from_slice(init);
+        if self.buffer.len() > 24 {
+            let mut sr = StreamReader::new(init);
+            self.width = sr.read_u16().unwrap();
+            self.height = sr.read_u16().unwrap();
+            let mut pfb: [u8; 16] = [0u8; 16];
+            sr.extract_slice(16, &mut pfb);
+            // This pixel format will be used unless the client requests a different format using the SetPixelFormat message
+            self.pf = (&pfb).into();
+            self.name = sr.read_string_l32().unwrap();
+            ConsoleService::log(&format!("VNC: {}x{}", self.width, self.height));
+            self.server_init = true;
+            ProtocalHandlerOutput::SetCanvas(self.width, self.height)
+        } else {
+            ProtocalHandlerOutput::Ok
+        }
+    }
+
+    // No. of bytes     Type    [Value]     Description
+    // 1                CARD8   3           message-type
+    // 1                CARD8               incremental
+    // 2                CARD16              x-position
+    // 2                CARD16              y-position
+    // 2                CARD16              width
+    // 2                CARD16              height
+    fn framebuffer_update_request(&self, incremental: u8) -> ProtocalHandlerOutput {
+        // ConsoleService::log(&format!("VNC: framebuffer_update_request {}", incremental));
+        let mut out: Vec<u8> = Vec::new();
+        let mut sw = StreamWriter::new(&mut out);
+        sw.write_u8(3);
+        sw.write_u8(incremental);
+        sw.write_u16(0);
+        sw.write_u16(0);
+        sw.write_u16(self.width);
+        sw.write_u16(self.height);
+        ProtocalHandlerOutput::WsBuf(out)
+    }
+
+    // No. of bytes     Type    [Value]     Description
+    // 1                CARD8   0           message-type
+    // 1                                    padding
+    // 2                CARD16              number-of-rectangles
+    // This is followed by number-of-rectanglesrectangles of pixel data.
+    fn handle_framebuffer_update(&mut self, sr: &mut StreamReader) -> ProtocalHandlerOutput {
+        let _padding = sr.read_u8().unwrap();
+        self.num_rects_left = sr.read_u16().unwrap();
+        self.rects = Vec::with_capacity(self.num_rects_left as usize);
+        self.extract_rects(sr);
+        self.render_rects()
+    }
+
+    fn handle_set_colour_map(&mut self, _sr: &mut StreamReader) -> ProtocalHandlerOutput {
+        unimplemented!()
+    }
+
+    fn handle_bell(&mut self, _sr: &mut StreamReader) -> ProtocalHandlerOutput {
+        unimplemented!()
+    }
+
+    fn handle_server_cut_text(&mut self, _sr: &mut StreamReader) -> ProtocalHandlerOutput {
+        unimplemented!()
+    }
+
+    fn extract_rects(&mut self, sr: &mut StreamReader) {
+        while self.num_rects_left > 0 {
+            // we always keep the last rect in the vec
+            // and all the rects that has already been re-assembly should already been rendered
+            if self.rects.len() > 0 && self.rects.last().unwrap().left_data > 0 {
+                // which means that there is one rects that has not been re-assembly
+                let last_rect = self.rects.last_mut().unwrap();
+                while let Some(v) = sr.read_u8() {
+                    last_rect.encoding_data.push(v);
+                    last_rect.left_data -= 1;
+                    if last_rect.left_data == 0 {
+                        // at the end of the rect
+                        self.num_rects_left -= 1;
+                        break;
+                    }
+                }
+                ConsoleService::log(&format!(
+                    "VNC read: {}, pending {}",
+                    last_rect.encoding_data.len(),
+                    last_rect.left_data
+                ));
+                if last_rect.left_data == 0 {
+                    // there is still some data left
+                    // start a new rect
+                    // it must be handled in the else branch
+                    continue;
+                } else {
+                    // break the while loop
+                    // render as much as we can
+                    break;
+                }
+            } else {
+                // a brand new rects
+                let x = sr.read_u16().unwrap();
+                let y = sr.read_u16().unwrap();
+                let width = sr.read_u16().unwrap();
+                let height = sr.read_u16().unwrap();
+                let encoding_type = sr.read_u32().unwrap();
+                match encoding_type {
+                    0 => {
+                        let mut left_data = width as u32 * height as u32 * 4;
+                        let mut encoding_data: Vec<u8> = Vec::with_capacity(left_data as usize);
+                        while let Some(v) = sr.read_u8() {
+                            // read as much as we can
+                            encoding_data.push(v);
+                            if encoding_data.len() == left_data as usize {
+                                break;
+                            }
+                        }
+                        left_data -= encoding_data.len() as u32;
+                        if left_data == 0 {
+                            self.num_rects_left -= 1;
+                        }
+                        // ConsoleService::log(&format!("VNC read new: {}", encoding_data.len()));
+                        self.rects.push(VncRect {
+                            x,
+                            y,
+                            width,
+                            height,
+                            encoding_data,
+                            encoding_type,
+                            left_data,
+                        });
+                        // break the while loop
+                        // render as much as we can
+                        break;
+                    }
+                    _ => {
+                        ConsoleService::log(&format!(
+                            "VNC: unknown encoding type {}",
+                            encoding_type
+                        ));
+                        ConsoleService::log(&format!(
+                            "VNC: x:{}, y:{}, w:{}, h:{}",
+                            x, y, width, height
+                        ));
+                        ConsoleService::log(&format!("VNC: left_data:{:x?}", sr.read_u32()));
+                        unimplemented!()
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_rects(&mut self) -> ProtocalHandlerOutput {
+        let mut out: Vec<CanvasData> = Vec::new();
+        if self.rects.len() > 1 || self.num_rects_left == 0 {
+            let drain_len = {
+                if self.num_rects_left != 0 {
+                    self.rects.len() - 1
+                } else {
+                    self.rects.len()
+                }
+            };
+
+            ConsoleService::log(&format!("VNC render {} rects", drain_len));
+            for x in self.rects.drain(0..drain_len) {
+                let mut data: Vec<u8> = Vec::with_capacity(x.encoding_data.len());
+                for i in 0..x.width {
+                    for j in 0..x.height {
+                        let idx = (i as usize + j as usize * x.width as usize) * 4;
+
+                        let b = x.encoding_data[idx + 0];
+                        let g = x.encoding_data[idx + 1];
+                        let r = x.encoding_data[idx + 2];
+                        let a = x.encoding_data[idx + 3];
+
+                        data.extend_from_slice(&[r, g, b, a]);
+                    }
+                }
+                out.push(CanvasData {
+                    x: x.x,
+                    y: x.y,
+                    width: x.width,
+                    height: x.height,
+                    data,
+                });
+            }
+        }
+
+        ProtocalHandlerOutput::RenderCanvas(out)
     }
 }
 
 struct VncEnds;
 
-impl VncStateMachine for VncEnds {
+impl VncState for VncEnds {
     fn handle(&mut self, _input: &[u8]) -> ProtocalHandlerOutput {
         ProtocalHandlerOutput::Err(VNC_FAILED.to_string())
     }
@@ -280,7 +475,7 @@ impl VncStateMachine for VncEnds {
         false
     }
 
-    fn next(&self) -> Box<dyn VncStateMachine> {
+    fn next(&self) -> Box<dyn VncState> {
         Box::new(VncEnds)
     }
 }
@@ -396,4 +591,25 @@ impl Default for PixelFormat {
             padding_3: 0,
         }
     }
+}
+
+//Each rectangle consists of:
+// 2                CARD16              x-position
+// 2                CARD16              y-position
+// 2                CARD16              width
+// 2                CARD16              height
+// 4                CARD32              encoding-type:
+//                          0           raw encoding
+//                          1           copy rectangle encoding
+//                          2           RRE encoding
+//                          4           CoRRE encoding
+//                          5           Hextile encoding
+struct VncRect {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    encoding_type: u32,
+    encoding_data: Vec<u8>,
+    left_data: u32,
 }

@@ -51,7 +51,7 @@ impl Handler<AuthMsg> for Authenticator {
 
     fn handle(&mut self, msg: AuthMsg, _ctx: &mut Context<Self>) -> Self::Result {
         match msg {
-            AuthMsg::DoAuth(auth_info) => {
+            AuthMsg::DoAuth(_auth_info) => {
                 // if auth_info.username == "admin" && auth_info.password == "admin" {
                 //     AuthResult::AuthSuccess
                 // } else {

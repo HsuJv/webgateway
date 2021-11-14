@@ -1,10 +1,21 @@
 use std::slice::Iter;
+
+pub struct CanvasData {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub data: Vec<u8>,
+}
+
 pub enum ProtocalHandlerOutput {
     Ok,
     WsBuf(Vec<u8>),
     Err(String),
     RequireUsername,
     RequirePassword,
+    SetCanvas(u16, u16),
+    RenderCanvas(Vec<CanvasData>),
 }
 
 pub struct ProtocalHandler<T>
@@ -29,12 +40,17 @@ where
     pub fn set_credential(&mut self, username: &str, password: &str) -> ProtocalHandlerOutput {
         self.inner.set_credential(username, password)
     }
+
+    pub fn require_frame(&mut self, incremental: u8) -> ProtocalHandlerOutput {
+        self.inner.require_frame(incremental)
+    }
 }
 
 pub trait ProtocalImpl {
     fn new() -> Self;
     fn handle(&mut self, input: &[u8]) -> ProtocalHandlerOutput;
     fn set_credential(&mut self, username: &str, password: &str) -> ProtocalHandlerOutput;
+    fn require_frame(&mut self, incremental: u8) -> ProtocalHandlerOutput;
 }
 
 pub struct StreamReader<'a> {
@@ -110,5 +126,57 @@ impl<'a> StreamReader<'a> {
 
     pub fn eof(&mut self) -> bool {
         self.inner.next().is_none()
+    }
+}
+
+pub struct StreamWriter<'a> {
+    inner: &'a mut Vec<u8>,
+}
+
+impl<'a> StreamWriter<'a> {
+    pub fn new(buf: &'a mut Vec<u8>) -> Self {
+        Self { inner: buf }
+    }
+
+    pub fn write_u8(&mut self, b: u8) {
+        self.inner.push(b);
+    }
+
+    pub fn write_u16(&mut self, b: u16) {
+        self.inner.extend_from_slice(&b.to_be_bytes());
+    }
+
+    pub fn write_u32(&mut self, b: u32) {
+        self.inner.extend_from_slice(&b.to_be_bytes());
+    }
+
+    pub fn write_s8(&mut self, b: i8) {
+        self.write_u8(b as u8);
+    }
+
+    pub fn write_s16(&mut self, b: i16) {
+        self.write_u16(b as u16);
+    }
+
+    pub fn write_s32(&mut self, b: i32) {
+        self.write_u32(b as u32);
+    }
+
+    pub fn write_string_with_len(&mut self, s: &str) {
+        self.inner.extend_from_slice(s.as_bytes());
+    }
+
+    pub fn write_string_l16(&mut self, s: &str) {
+        self.write_u16(s.len() as u16);
+        self.write_string_with_len(s);
+    }
+
+    pub fn write_string_l32(&mut self, s: &str) {
+        self.write_u32(s.len() as u32);
+        self.write_string_with_len(s);
+    }
+
+    pub fn write_slice(&mut self, s: &[u8]) {
+        self.inner.extend_from_slice(s);
     }
 }

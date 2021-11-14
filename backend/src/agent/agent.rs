@@ -15,8 +15,8 @@ struct TcpCodec;
 impl Encoder<Bytes> for TcpCodec {
     type Error = io::Error;
 
-    fn encode(&mut self, item: Bytes, _dst: &mut BytesMut) -> Result<(), Self::Error> {
-        info!("encoding: {:?}", item);
+    fn encode(&mut self, _item: Bytes, _dst: &mut BytesMut) -> Result<(), Self::Error> {
+        // info!("encoding: {:?}", item);
         Ok(())
     }
 }
@@ -26,7 +26,7 @@ impl Decoder for TcpCodec {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        info!("recv from server: {:?}", src);
+        // info!("recv from server: {:?}", src);
         if 0 == src.len() {
             return Ok(None);
         }
@@ -98,7 +98,7 @@ impl StreamHandler<Result<Bytes, io::Error>> for Agent {
     fn handle(&mut self, msg: Result<Bytes, io::Error>, ctx: &mut Context<Self>) {
         match msg {
             Ok(data) => {
-                info!("recv from server: {:?}", data);
+                // info!("recv from server: {:?}", data);
                 if self.ws_addr.is_some() {
                     ctx.address().do_send(AgentMsg::SendToClient(data));
                 } else {

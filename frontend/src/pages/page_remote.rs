@@ -1,4 +1,6 @@
 use serde_json::{json, Value};
+use wasm_bindgen::{Clamped, JsValue};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 use yew::{
     format::Json,
     html,
@@ -8,6 +10,8 @@ use yew::{
         ConsoleService, FetchService,
     },
 };
+
+use gloo::timers::callback::Interval;
 
 use crate::{
     components::{self, input::Input, ws::WebsocketMsg},
@@ -27,6 +31,9 @@ pub struct PageRemote {
     request_password: bool,
     username: String,
     password: String,
+    canvas: NodeRef,
+    canvas_ctx: Option<CanvasRenderingContext2d>,
+    interval: Option<Interval>,
 }
 
 #[derive(Clone, PartialEq, Properties)]
@@ -41,6 +48,7 @@ pub enum RemoteMsg {
     UpdateUsername(String),
     UpdatePassword(String),
     SendCredential,
+    RequireFrame(u8),
 }
 
 impl Component for PageRemote {
@@ -60,6 +68,9 @@ impl Component for PageRemote {
             request_password: false,
             username: String::from(""),
             password: String::from(""),
+            canvas: NodeRef::default(),
+            canvas_ctx: None,
+            interval: None,
         }
     }
 
@@ -140,6 +151,16 @@ impl Component for PageRemote {
                 let _ = self.protocal_out_handler(out);
                 true
             }
+            RemoteMsg::RequireFrame(incremental) => {
+                let out = self.handler.require_frame(incremental);
+                if self.interval.is_none() {
+                    let link = self.link.clone();
+                    let tick =
+                        Interval::new(250, move || link.send_message(RemoteMsg::RequireFrame(1)));
+                    self.interval = Some(tick);
+                }
+                self.protocal_out_handler(out)
+            }
         }
     }
 
@@ -167,6 +188,7 @@ impl Component for PageRemote {
                         {self.button_connect_view()}
                         <components::ws::WebsocketCtx
                         weak_link=ws_link onrecv=recv_msg/>
+                        <canvas id="remote-canvas"  ref=self.canvas.clone() ></canvas>
                         {self.error_msg.clone()}
                     </div>
                 </>
@@ -197,7 +219,42 @@ impl PageRemote {
                 self.request_password = true;
                 true
             }
-            _ => unimplemented!(),
+            ProtocalHandlerOutput::RenderCanvas(crs) => {
+                let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
+                let ctx = match &self.canvas_ctx {
+                    Some(ctx) => ctx,
+                    None => {
+                        let ctx = CanvasRenderingContext2d::from(JsValue::from(
+                            canvas.get_context("2d").unwrap().unwrap(),
+                        ));
+                        self.canvas_ctx = Some(ctx);
+                        self.canvas_ctx.as_ref().unwrap()
+                    }
+                };
+
+                for cr in crs {
+                    let data = ImageData::new_with_u8_clamped_array_and_sh(
+                        Clamped(&cr.data),
+                        cr.width as u32,
+                        cr.height as u32,
+                    )
+                    .unwrap();
+                    ConsoleService::log(&format!(
+                        "renderring at ({}, {}), width {}, height {}",
+                        cr.x, cr.y, cr.width, cr.height
+                    ));
+                    let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
+                }
+                true
+            }
+            ProtocalHandlerOutput::SetCanvas(width, height) => {
+                let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
+                canvas.set_width(width as u32);
+                canvas.set_height(height as u32);
+                self.link.send_message(RemoteMsg::RequireFrame(0));
+                true
+            }
+            _ => false,
         }
     }
 
