@@ -1,5 +1,3 @@
-
-
 use super::common::*;
 use super::des;
 use yew::services::ConsoleService;
@@ -74,12 +72,12 @@ impl ProtocalImpl for VncHandler {
 
     fn do_input(&mut self, input: Vec<u8>) {
         self.buf_num += input.len();
-        ConsoleService::info(&format!(
-            "VNC input {}, left {}, require {}",
-            input.len(),
-            self.buf_num,
-            self.require
-        ));
+        // ConsoleService::info(&format!(
+        //     "VNC input {}, left {}, require {}",
+        //     input.len(),
+        //     self.buf_num,
+        //     self.require
+        // ));
         self.reader.append(input);
         while self.buf_num >= self.require {
             self.handle_input();
@@ -326,8 +324,8 @@ impl VncHandler {
     fn handle_framebuffer_update(&mut self) {
         let _padding = self.read_u8();
         self.num_rects_left = self.read_u16();
-        ConsoleService::log(&format!("VNC: {} rects", self.num_rects_left));
-        self.require = 12; // the length of the first rectangle
+        // ConsoleService::log(&format!("VNC: {} rects", self.num_rects_left));
+        self.require = 12; // the length of the first rectangle hdr
     }
 
     //Each rectangle consists of:
@@ -386,12 +384,15 @@ impl VncHandler {
                     data: image_data,
                 }));
             self.num_rects_left -= 1;
+            if 0 == self.num_rects_left {
+                self.during_update = false;
+                self.require = 1;
+            } else {
+                self.require = 12; // the length of the next rectangle hdr
+            }
         }
-        if 0 == self.num_rects_left {
-            self.during_update = false;
-            self.require = 1;
-        }
-        ConsoleService::log(&format!("{} rects left", self.num_rects_left));
+
+        // ConsoleService::log(&format!("{} rects left", self.num_rects_left));
     }
 
     fn handle_set_colour_map(&mut self) {
