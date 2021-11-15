@@ -125,8 +125,8 @@ impl Component for PageRemote {
                 true
             }
             RemoteMsg::Recv(v) => {
-                let out = self.handler.handle(&v);
-                self.protocal_out_handler(out)
+                self.handler.do_input(v);
+                self.protocal_out_handler()
             }
             RemoteMsg::Send(v) => {
                 self.ws_link
@@ -147,19 +147,18 @@ impl Component for PageRemote {
             RemoteMsg::SendCredential => {
                 self.request_username = false;
                 self.request_password = false;
-                let out = self.handler.set_credential(&self.username, &self.password);
-                let _ = self.protocal_out_handler(out);
-                true
+                self.handler.set_credential(&self.username, &self.password);
+                self.protocal_out_handler()
             }
             RemoteMsg::RequireFrame(incremental) => {
-                let out = self.handler.require_frame(incremental);
+                self.handler.require_frame(incremental);
                 if self.interval.is_none() {
                     let link = self.link.clone();
                     let tick =
                         Interval::new(250, move || link.send_message(RemoteMsg::RequireFrame(1)));
                     self.interval = Some(tick);
                 }
-                self.protocal_out_handler(out)
+                self.protocal_out_handler()
             }
         }
     }
@@ -199,63 +198,79 @@ impl Component for PageRemote {
 
 // impl PageRemote
 impl PageRemote {
-    fn protocal_out_handler(&mut self, out: ProtocalHandlerOutput) -> ShouldRender {
-        match out {
-            ProtocalHandlerOutput::Err(err) => {
-                self.error_msg = err.clone();
-                self.ws_link
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .send_message(WebsocketMsg::Disconnected);
-                true
-            }
-            ProtocalHandlerOutput::Ok => false,
-            ProtocalHandlerOutput::WsBuf(out) => {
-                self.link.send_message(RemoteMsg::Send(out));
-                false
-            }
-            ProtocalHandlerOutput::RequirePassword => {
-                self.request_password = true;
-                true
-            }
-            ProtocalHandlerOutput::RenderCanvas(crs) => {
-                let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
-                let ctx = match &self.canvas_ctx {
-                    Some(ctx) => ctx,
-                    None => {
-                        let ctx = CanvasRenderingContext2d::from(JsValue::from(
-                            canvas.get_context("2d").unwrap().unwrap(),
-                        ));
-                        self.canvas_ctx = Some(ctx);
-                        self.canvas_ctx.as_ref().unwrap()
+    fn protocal_out_handler(&mut self) -> ShouldRender {
+        let out = self.handler.get_output();
+        let mut should_render = false;
+        if !out.is_empty() {
+            for o in out {
+                match o {
+                    ProtocalHandlerOutput::Err(err) => {
+                        self.error_msg = err.clone();
+                        self.ws_link
+                            .borrow_mut()
+                            .as_mut()
+                            .unwrap()
+                            .send_message(WebsocketMsg::Disconnected);
+                        should_render = true;
                     }
-                };
+                    ProtocalHandlerOutput::Ok => (),
+                    ProtocalHandlerOutput::WsBuf(out) => {
+                        self.link.send_message(RemoteMsg::Send(out));
+                    }
+                    ProtocalHandlerOutput::RequirePassword => {
+                        self.request_password = true;
+                        should_render = true;
+                    }
+                    ProtocalHandlerOutput::RenderCanvas(cr) => {
+                        let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
+                        let ctx = match &self.canvas_ctx {
+                            Some(ctx) => ctx,
+                            None => {
+                                let ctx = CanvasRenderingContext2d::from(JsValue::from(
+                                    canvas.get_context("2d").unwrap().unwrap(),
+                                ));
+                                self.canvas_ctx = Some(ctx);
+                                self.canvas_ctx.as_ref().unwrap()
+                            }
+                        };
 
-                for cr in crs {
-                    let data = ImageData::new_with_u8_clamped_array_and_sh(
-                        Clamped(&cr.data),
-                        cr.width as u32,
-                        cr.height as u32,
-                    )
-                    .unwrap();
-                    ConsoleService::log(&format!(
-                        "renderring at ({}, {}), width {}, height {}",
-                        cr.x, cr.y, cr.width, cr.height
-                    ));
-                    let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
+                        let data = ImageData::new_with_u8_clamped_array_and_sh(
+                            Clamped(&cr.data),
+                            cr.width as u32,
+                            cr.height as u32,
+                        )
+                        .unwrap();
+                        // ConsoleService::log(&format!(
+                        //     "renderring at ({}, {}), width {}, height {}",
+                        //     cr.x, cr.y, cr.width, cr.height
+                        // ));
+                        let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
+                        should_render = true;
+                    }
+                    ProtocalHandlerOutput::SetCanvas(width, height) => {
+                        let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
+                        canvas.set_width(width as u32);
+                        canvas.set_height(height as u32);
+                        self.link.send_message(RemoteMsg::RequireFrame(1));
+                        let ctx = match &self.canvas_ctx {
+                            Some(ctx) => ctx,
+                            None => {
+                                let ctx = CanvasRenderingContext2d::from(JsValue::from(
+                                    canvas.get_context("2d").unwrap().unwrap(),
+                                ));
+                                self.canvas_ctx = Some(ctx);
+                                self.canvas_ctx.as_ref().unwrap()
+                            }
+                        };
+                        ctx.rect(0 as f64, 0 as f64, width as f64, height as f64);
+                        ctx.fill();
+                        should_render = true;
+                    }
+                    _ => unimplemented!(),
                 }
-                true
             }
-            ProtocalHandlerOutput::SetCanvas(width, height) => {
-                let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
-                canvas.set_width(width as u32);
-                canvas.set_height(height as u32);
-                self.link.send_message(RemoteMsg::RequireFrame(0));
-                true
-            }
-            _ => false,
         }
+        should_render
     }
 
     fn username_view(&self) -> Html {
