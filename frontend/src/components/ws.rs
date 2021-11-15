@@ -35,7 +35,7 @@ impl Component for WebsocketCtx {
         props.weak_link.borrow_mut().replace(link.clone());
         Self {
             ws: None,
-            link: link,
+            link,
             error_msg: String::new(),
             onrecv: props.onrecv,
         }
@@ -45,7 +45,7 @@ impl Component for WebsocketCtx {
         match msg {
             WebsocketMsg::Connect => {
                 ConsoleService::log("Connecting");
-                let cbout = self.link.callback(|data| WebsocketMsg::Recv(data));
+                let cbout = self.link.callback(WebsocketMsg::Recv);
                 let cbnot = self.link.callback(|input| {
                     ConsoleService::log(&format!("Notification: {:?}", input));
                     match input {
@@ -104,7 +104,7 @@ impl Component for WebsocketCtx {
 
     fn rendered(&mut self, first_render: bool) {
         if first_render && self.ws.is_none() {
-            ConsoleService::log(&format!("Start websocket"));
+            ConsoleService::log(&"Start websocket".to_string());
             self.link.send_message(WebsocketMsg::Connect);
         }
     }

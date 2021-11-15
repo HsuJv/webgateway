@@ -7,13 +7,13 @@ pub struct CanvasData {
 }
 
 pub enum ProtocalHandlerOutput {
-    Ok,
     WsBuf(Vec<u8>),
     Err(String),
     RequireUsername,
     RequirePassword,
     SetCanvas(u16, u16),
     RenderCanvas(CanvasData),
+    SetClipboard(String),
 }
 
 pub struct ProtocalHandler<T>
@@ -68,6 +68,25 @@ impl StreamReader {
 
     pub fn append(&mut self, buf: Vec<u8>) {
         self.inner.push(buf);
+    }
+
+    pub fn read_exact_vec(&mut self, out_vec: &mut Vec<u8>, n: usize) {
+        let mut i = 0;
+        let mut left = n;
+        while i < n {
+            if self.inner[0].len() > left {
+                for it in self.inner[0].drain(0..left) {
+                    out_vec.push(it);
+                }
+                i += left;
+                left = 0;
+            } else {
+                out_vec.extend(&self.inner[0]);
+                left -= self.inner[0].len();
+                i += self.inner[0].len();
+                self.inner.remove(0);
+            }
+        }
     }
 
     pub fn read_exact(&mut self, out_buf: &mut [u8], n: usize) {

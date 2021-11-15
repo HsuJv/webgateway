@@ -35,13 +35,12 @@ impl Actor for WsSession {
 impl Handler<WsMsg> for WsSession {
     type Result = ();
 
-    fn handle(&mut self, msg: WsMsg, ctx: &mut Self::Context) -> () {
+    fn handle(&mut self, msg: WsMsg, ctx: &mut Self::Context) {
         match msg {
             WsMsg::SendToClient(data) => {
                 ctx.binary(data);
             }
         };
-        ()
     }
 }
 
@@ -75,9 +74,9 @@ pub async fn ws_index(
         .unwrap()
     {
         AgentManagerResult::Success(agent) => ws::start(WsSession { agent }, &req, stream),
-        _ => Err(Error::from(actix_web::error::ErrorInternalServerError(
+        _ => Err(actix_web::error::ErrorInternalServerError(
             "Agent not found",
-        ))),
+        )),
     };
 
     match &resp {

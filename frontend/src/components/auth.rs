@@ -117,9 +117,9 @@ impl Component for AuthComponents {
     fn view(&self) -> Html {
         let link = &self.link;
 
-        let update_uname = link.callback(|v| AuthMsg::UpdateUsername(v));
+        let update_uname = link.callback(AuthMsg::UpdateUsername);
 
-        let update_pword = link.callback(|v| AuthMsg::UpdatePassword(v));
+        let update_pword = link.callback(AuthMsg::UpdatePassword);
 
         let auth_post = link.callback(|_| AuthMsg::AuthRequest);
 

@@ -31,6 +31,13 @@ pub enum VncState {
     Disconnected,
 }
 
+pub enum ServerMessage {
+    FramebufferUpdate,
+    SetColourMap,
+    ServerCutText,
+    None,
+}
+
 pub struct VncHandler {
     state: VncState,
     security_type: SecurityType,
@@ -42,9 +49,8 @@ pub struct VncHandler {
     height: u16,
     pf: PixelFormat,
     name: String,
-    server_init: bool,
-    during_update: bool,
-    num_rects_left: u16,
+    msg_handling: ServerMessage,
+    num_rect_left: u16,
     padding_rect: Option<VncRect>,
     outs: Vec<ProtocalHandlerOutput>,
 }
@@ -62,9 +68,8 @@ impl ProtocalImpl for VncHandler {
             height: 0,
             pf: PixelFormat::default(),
             name: String::new(),
-            server_init: false,
-            during_update: false,
-            num_rects_left: 0,
+            msg_handling: ServerMessage::None,
+            num_rect_left: 0,
             padding_rect: None,
             outs: Vec::with_capacity(10),
         }
@@ -100,7 +105,7 @@ impl ProtocalImpl for VncHandler {
 
         let pass_len = password.len();
         let mut key = [0u8; 8];
-        for i in 0..8 {
+        for (i, key_i) in key.iter_mut().enumerate() {
             let c = if i < pass_len {
                 password.as_bytes()[i]
             } else {
@@ -110,7 +115,7 @@ impl ProtocalImpl for VncHandler {
             for j in 0..8 {
                 cs |= ((c >> j) & 1) << (7 - j)
             }
-            key[i] = cs;
+            *key_i = cs;
         }
         // ConsoleService::log(&format!("challenge {:x?}", self.challenge));
         let output = des::encrypt(&self.challenge, &key);
@@ -122,7 +127,7 @@ impl ProtocalImpl for VncHandler {
     }
 
     fn require_frame(&mut self, incremental: u8) {
-        if !self.during_update {
+        if let ServerMessage::None = self.msg_handling {
             self.framebuffer_update_request(incremental)
         }
     }
@@ -150,9 +155,19 @@ impl VncHandler {
         self.reader.read_u64()
     }
 
+    fn read_exact_vec(&mut self, out_vec: &mut Vec<u8>, len: usize) {
+        self.buf_num -= len;
+        self.reader.read_exact_vec(out_vec, len);
+    }
+
     fn read_exact(&mut self, buf: &mut [u8], len: usize) {
         self.buf_num -= len;
         self.reader.read_exact(buf, len)
+    }
+
+    fn read_string(&mut self, len: usize) -> String {
+        self.buf_num -= len;
+        self.reader.read_string(len)
     }
 
     fn read_string_l8(&mut self) -> String {
@@ -186,9 +201,9 @@ impl VncHandler {
         self.require = 25; // the minimal length of server_init message
 
         // send client_init message
-        let shared_flag = 1;
+        let shared_flag = 0;
         self.outs
-            .push(ProtocalHandlerOutput::WsBuf(vec![shared_flag].into()));
+            .push(ProtocalHandlerOutput::WsBuf(vec![shared_flag]));
     }
 
     // No. of bytes     Type    [Value]     Description
@@ -200,7 +215,6 @@ impl VncHandler {
     // 2                CARD16              height
     fn framebuffer_update_request(&mut self, incremental: u8) {
         // ConsoleService::log(&format!("VNC: framebuffer_update_request {}", incremental));
-        self.during_update = true;
         let mut out: Vec<u8> = Vec::new();
         let mut sw = StreamWriter::new(&mut out);
         sw.write_u8(3);
@@ -301,17 +315,20 @@ impl VncHandler {
     }
 
     fn handle_server_message(&mut self) {
-        if self.num_rects_left > 0 {
-            self.read_rect();
-        } else {
-            let msg_type = self.read_u8();
+        match self.msg_handling {
+            ServerMessage::SetColourMap => self.read_colour_map(),
+            ServerMessage::ServerCutText => self.read_cut_text(),
+            ServerMessage::FramebufferUpdate => self.read_rect(),
+            ServerMessage::None => {
+                let msg_type = self.read_u8();
 
-            match msg_type {
-                0 => self.handle_framebuffer_update(),
-                1 => self.handle_set_colour_map(),
-                2 => self.handle_bell(),
-                3 => self.handle_server_cut_text(),
-                _ => self.disconnect_with_err(VNC_FAILED),
+                match msg_type {
+                    0 => self.handle_framebuffer_update(),
+                    1 => self.handle_set_colour_map(),
+                    2 => self.handle_bell(),
+                    3 => self.handle_server_cut_text(),
+                    _ => self.disconnect_with_err(VNC_FAILED),
+                }
             }
         }
     }
@@ -323,9 +340,10 @@ impl VncHandler {
     // This is followed by number-of-rectanglesrectangles of pixel data.
     fn handle_framebuffer_update(&mut self) {
         let _padding = self.read_u8();
-        self.num_rects_left = self.read_u16();
+        self.num_rect_left = self.read_u16();
         // ConsoleService::log(&format!("VNC: {} rects", self.num_rects_left));
         self.require = 12; // the length of the first rectangle hdr
+        self.msg_handling = ServerMessage::FramebufferUpdate;
     }
 
     //Each rectangle consists of:
@@ -353,7 +371,13 @@ impl VncHandler {
                 2 => self.handle_rre_encoding(x, y, width, height),
                 4 => self.handle_corre_encoding(x, y, width, height),
                 5 => self.handle_hextile_encoding(x, y, width, height),
-                _ => self.disconnect_with_err(VNC_FAILED),
+                _ => {
+                    ConsoleService::log(&format!(
+                        "VNC: Unsupported encoding type {}",
+                        encoding_type
+                    ));
+                    self.disconnect_with_err(VNC_FAILED)
+                }
             }
         } else {
             // we now have an entire rectangle
@@ -361,15 +385,22 @@ impl VncHandler {
             let mut image_data: Vec<u8> = Vec::with_capacity(self.require);
             match rect.encoding_type {
                 0 => {
-                    for _ in 0..rect.height {
-                        for _ in 0..rect.width {
-                            let mut pixel = [0u8; 4];
-                            self.read_exact(&mut pixel, 4);
-                            let b = pixel[0];
-                            let g = pixel[1];
-                            let r = pixel[2];
-                            let a = pixel[3];
-                            image_data.extend_from_slice(&[r, g, b, a]);
+                    // for _ in 0..rect.height {
+                    //     for _ in 0..rect.width {
+                    //         let mut pixel = [0u8; 4];
+                    //         self.read_exact(&mut pixel, 4);
+                    //         let b = pixel[0];
+                    //         let g = pixel[1];
+                    //         let r = pixel[2];
+                    //         let a = pixel[3];
+                    //         image_data.extend_from_slice(&[r, g, b, a]);
+                    //     }
+                    // }
+                    self.read_exact_vec(&mut image_data, self.require);
+                    for y in 0..rect.height {
+                        for x in 0..rect.width {
+                            let idx = (y as usize * rect.width as usize + x as usize) * 4;
+                            image_data.swap(idx, idx + 2)
                         }
                     }
                 }
@@ -383,10 +414,10 @@ impl VncHandler {
                     height: rect.height,
                     data: image_data,
                 }));
-            self.num_rects_left -= 1;
-            if 0 == self.num_rects_left {
-                self.during_update = false;
-                self.require = 1;
+            self.num_rect_left -= 1;
+            if 0 == self.num_rect_left {
+                self.msg_handling = ServerMessage::None;
+                self.require = 1; // any message from sever will be handled
             } else {
                 self.require = 12; // the length of the next rectangle hdr
             }
@@ -395,16 +426,71 @@ impl VncHandler {
         // ConsoleService::log(&format!("{} rects left", self.num_rects_left));
     }
 
+    // Currently there is little or no support for colour maps. Some preliminary work was done
+    // on this, but is incomplete. It was intended to be something like this:
+    //      When the pixel format uses a “colour map”, this message tells the client
+    //      that the specified pixel values should be mapped to the given RGB intensities.
+    //      The server may only specify pixel values for which the client has
+    //      not already set the RGB intensities using FixColourMapEntries (section
+    //      5.2.2).
+    // No. of bytes     Type    [Value]     Description
+    // 1                CARD8   1           message-type
+    // 1                                    padding
+    // 2                CARD16              first-colour
+    // 2                CARD16              number-of-colours
     fn handle_set_colour_map(&mut self) {
-        unimplemented!()
+        let _padding = self.read_u8();
+        let _first_colour = self.read_u16();
+        self.require = self.read_u16() as usize * 6;
+        self.msg_handling = ServerMessage::SetColourMap;
     }
 
+    // No. of bytes Type        [Value]     Description
+    // 2            CARD16                  red
+    // 2            CARD16                  green
+    // 2            CARD16                  blue
+    fn read_colour_map(&mut self) {
+        // while self.num_block_left > 0 {
+        //     let _r = self.read_u16();
+        //     let _g = self.read_u16();
+        //     let _b = self.read_u16();
+        //     self.num_block_left -= 1;
+        // }
+
+        // just consume the data
+        let mut v = Vec::with_capacity(self.require);
+        self.read_exact_vec(&mut v, self.require);
+        self.require = 1;
+        self.msg_handling = ServerMessage::None;
+    }
+
+    // Ring a bell on the client if it has one
     fn handle_bell(&mut self) {
-        unimplemented!()
+        // just do nothing
     }
 
+    // The server has new ASCII text in its cut buffer. End of lines are represented by the
+    // linefeed / newline character (ASCII value 10) alone. No carriage-return (ASCII value
+    // 13) is needed.
+    //     No. of bytes     Type    [Value]     Description
+    //      1               CARD8   3           message-type
+    //      3                                   padding
+    //      4               CARD32              length
+    //      length          CARD8               array text
     fn handle_server_cut_text(&mut self) {
-        unimplemented!()
+        for _ in 0..3 {
+            self.read_u8();
+        }
+        self.require = self.read_u32() as usize;
+        self.msg_handling = ServerMessage::ServerCutText;
+        ConsoleService::log(&format!("VNC: ServerCutText {} bytes", self.require));
+    }
+
+    fn read_cut_text(&mut self) {
+        let text = self.read_string(self.require);
+        self.require = 1;
+        self.msg_handling = ServerMessage::None;
+        self.outs.push(ProtocalHandlerOutput::SetClipboard(text));
     }
 
     fn handle_raw_encoding(&mut self, x: u16, y: u16, width: u16, height: u16) {
@@ -474,24 +560,24 @@ struct PixelFormat {
 
 impl From<PixelFormat> for Vec<u8> {
     fn from(pf: PixelFormat) -> Vec<u8> {
-        let mut v = Vec::new();
-        v.push(pf.bits_per_pixel);
-        v.push(pf.depth);
-        v.push(pf.big_endian_flag);
-        v.push(pf.true_color_flag);
-        v.push((pf.red_max >> 8) as u8);
-        v.push(pf.red_max as u8);
-        v.push((pf.green_max >> 8) as u8);
-        v.push(pf.green_max as u8);
-        v.push((pf.blue_max >> 8) as u8);
-        v.push(pf.blue_max as u8);
-        v.push(pf.red_shift);
-        v.push(pf.green_shift);
-        v.push(pf.blue_shift);
-        v.push(pf.padding_1);
-        v.push(pf.padding_2);
-        v.push(pf.padding_3);
-        v
+        vec![
+            pf.bits_per_pixel,
+            pf.depth,
+            pf.big_endian_flag,
+            pf.true_color_flag,
+            (pf.red_max >> 8) as u8,
+            pf.red_max as u8,
+            (pf.green_max >> 8) as u8,
+            pf.green_max as u8,
+            (pf.blue_max >> 8) as u8,
+            pf.blue_max as u8,
+            pf.red_shift,
+            pf.green_shift,
+            pf.blue_shift,
+            pf.padding_1,
+            pf.padding_2,
+            pf.padding_3,
+        ]
     }
 }
 

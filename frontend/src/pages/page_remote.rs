@@ -177,7 +177,7 @@ impl Component for PageRemote {
                 </>
             }
         } else {
-            let recv_msg = self.link.callback(|v| RemoteMsg::Recv(v));
+            let recv_msg = self.link.callback(RemoteMsg::Recv);
             let ws_link = &self.ws_link;
             html! {
                 <>
@@ -213,7 +213,6 @@ impl PageRemote {
                             .send_message(WebsocketMsg::Disconnected);
                         should_render = true;
                     }
-                    ProtocalHandlerOutput::Ok => (),
                     ProtocalHandlerOutput::WsBuf(out) => {
                         self.link.send_message(RemoteMsg::Send(out));
                     }
@@ -266,6 +265,11 @@ impl PageRemote {
                         ctx.fill();
                         should_render = true;
                     }
+                    ProtocalHandlerOutput::SetClipboard(text) => {
+                        self.error_msg = format!("Clipboard get {}", text);
+                        ConsoleService::log(&self.error_msg);
+                        should_render = true;
+                    }
                     _ => unimplemented!(),
                 }
             }
@@ -275,7 +279,7 @@ impl PageRemote {
 
     fn username_view(&self) -> Html {
         if self.request_username {
-            let update_username = self.link.callback(|v| RemoteMsg::UpdateUsername(v));
+            let update_username = self.link.callback(RemoteMsg::UpdateUsername);
             html! {
                 <>
                     <Input id="username" type_="text" placeholder="username" on_change={update_username}/>
@@ -289,7 +293,7 @@ impl PageRemote {
 
     fn password_view(&self) -> Html {
         if self.request_password {
-            let update_password = self.link.callback(|v| RemoteMsg::UpdatePassword(v));
+            let update_password = self.link.callback(RemoteMsg::UpdatePassword);
             html! {
                 <>
                     <Input id="password" type_="password" placeholder="password" on_change={update_password}/>

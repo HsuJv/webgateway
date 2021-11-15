@@ -27,7 +27,7 @@ impl Decoder for TcpCodec {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         // info!("recv from server: {:?}", src);
-        if 0 == src.len() {
+        if src.is_empty() {
             return Ok(None);
         }
         let web_bytes = Bytes::from(src.to_vec());
