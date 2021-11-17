@@ -16,6 +16,7 @@ use super::agent::*;
 #[rtype(result = "()")]
 pub enum WsMsg {
     SendToClient(Bytes),
+    Close,
 }
 
 /// Define Websocket actor
@@ -40,6 +41,9 @@ impl Handler<WsMsg> for WsSession {
         match msg {
             WsMsg::SendToClient(data) => {
                 ctx.binary(data);
+            }
+            WsMsg::Close => {
+                ctx.stop();
             }
         };
     }

@@ -111,6 +111,9 @@ impl StreamHandler<Result<Bytes, io::Error>> for Agent {
             }
             Err(err) => {
                 error!("error: {:?}", err);
+                if self.ws_addr.is_some() {
+                    self.ws_addr.as_ref().unwrap().do_send(ws::WsMsg::Close);
+                }
                 ctx.address().do_send(AgentMsg::Shutdown);
             }
         }
