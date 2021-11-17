@@ -1,3 +1,8 @@
+use std::{
+    rc::Rc,
+    sync::{Mutex},
+};
+
 pub struct CanvasData {
     pub x: u16,
     pub y: u16,
@@ -20,7 +25,18 @@ pub struct ProtocalHandler<T>
 where
     T: ProtocalImpl,
 {
-    inner: T,
+    inner: Rc<Mutex<T>>,
+}
+
+impl<T> Clone for ProtocalHandler<T>
+where
+    T: ProtocalImpl,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<T> ProtocalHandler<T>
@@ -28,27 +44,45 @@ where
     T: ProtocalImpl,
 {
     pub fn new() -> Self {
-        Self { inner: T::new() }
+        Self {
+            inner: Rc::new(Mutex::new(T::new())),
+        }
     }
 
-    pub fn do_input(&mut self, input: Vec<u8>) {
-        self.inner.do_input(input);
+    pub fn do_input(&self, input: Vec<u8>) {
+        self.inner.as_ref().lock().unwrap().do_input(input);
     }
 
-    pub fn get_output(&mut self) -> Vec<ProtocalHandlerOutput> {
-        self.inner.get_output()
+    pub fn get_output(&self) -> Vec<ProtocalHandlerOutput> {
+        self.inner.as_ref().lock().unwrap().get_output()
     }
 
-    pub fn set_credential(&mut self, username: &str, password: &str) {
-        self.inner.set_credential(username, password);
+    pub fn set_credential(&self, username: &str, password: &str) {
+        self.inner
+            .as_ref()
+            .lock()
+            .unwrap()
+            .set_credential(username, password);
     }
 
-    pub fn set_resolution(&mut self, width: u16, height: u16) {
-        self.inner.set_resolution(width, height);
+    pub fn set_resolution(&self, width: u16, height: u16) {
+        self.inner
+            .as_ref()
+            .lock()
+            .unwrap()
+            .set_resolution(width, height);
     }
 
-    pub fn require_frame(&mut self, incremental: u8) {
-        self.inner.require_frame(incremental);
+    pub fn require_frame(&self, incremental: u8) {
+        self.inner
+            .as_ref()
+            .lock()
+            .unwrap()
+            .require_frame(incremental);
+    }
+
+    pub fn key_down(&self, key: u32) {
+        self.inner.as_ref().lock().unwrap().key_down(key);
     }
 }
 
@@ -58,6 +92,7 @@ pub trait ProtocalImpl {
     fn get_output(&mut self) -> Vec<ProtocalHandlerOutput>;
     fn set_credential(&mut self, username: &str, password: &str);
     fn set_resolution(&mut self, width: u16, height: u16);
+    fn key_down(&mut self, key: u32);
     fn require_frame(&mut self, incremental: u8);
 }
 

@@ -8,6 +8,10 @@ const VNC_RFB38: &[u8; 12] = b"RFB 003.008\n";
 const VNC_VER_UNSUPPORTED: &str = "unsupported version";
 const VNC_FAILED: &str = "Connection failed with unknow reason";
 
+fn jskey_to_x11(key: u32) -> u32 {
+    key
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SecurityType {
@@ -35,6 +39,7 @@ pub enum VncEncoding {
     DesktopSizePseudo = -223,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VncState {
     Init,
     Handshake,
@@ -162,6 +167,16 @@ impl ProtocalImpl for VncHandler {
         // VNC client doen't support resolution change
     }
 
+    fn key_down(&mut self, key: u32) {
+        if self.state != VncState::Connected {
+            return;
+        }
+        let key = jskey_to_x11(key);
+        if let ServerMessage::None = self.msg_handling {
+            self.send_key_event(key, true);
+        }
+    }
+
     fn require_frame(&mut self, incremental: u8) {
         if 0 == incremental {
             // first frame
@@ -261,6 +276,25 @@ impl VncHandler {
             sw.write_u32(*i as u32);
         }
 
+        self.outbuf.extend_from_slice(&out);
+    }
+
+    // +--------------+--------------+--------------+
+    // | No. of bytes | Type [Value] | Description  |
+    // +--------------+--------------+--------------+
+    // | 1            | U8 [4]       | message-type |
+    // | 1            | U8           | down-flag    |
+    // | 2            |              | padding      |
+    // | 4            | U32          | key          |
+    // +--------------+--------------+--------------+
+    fn send_key_event(&mut self, key: u32, down: bool) {
+        let mut out = Vec::with_capacity(10);
+        let mut sw = StreamWriter::new(&mut out);
+        sw.write_u8(4); // message-type
+        sw.write_u8(if down { 1 } else { 0 }); // down
+        sw.write_u16(0); // padding
+        sw.write_u32(key); // key
+        ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
         self.outbuf.extend_from_slice(&out);
     }
 

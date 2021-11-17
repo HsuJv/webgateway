@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use wasm_bindgen::{Clamped, JsValue};
+use wasm_bindgen::{prelude::Closure, Clamped, JsCast, JsValue};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 use yew::{
     format::Json,
@@ -121,6 +121,22 @@ impl Component for PageRemote {
                 true
             }
             RemoteMsg::Connected => {
+                let window = web_sys::window().unwrap();
+                let handler = self.handler.clone();
+                let key_down = move |e: KeyboardEvent| {
+                    e.stop_propagation();
+                    handler.key_down(e.key_code());
+                };
+
+                let handler = Box::new(key_down) as Box<dyn FnMut(_)>;
+
+                let cb = Closure::wrap(handler);
+
+                window
+                    .add_event_listener_with_callback("keypress", cb.as_ref().unchecked_ref())
+                    .unwrap();
+                cb.forget();
+
                 self.connected = true;
                 true
             }
@@ -155,7 +171,7 @@ impl Component for PageRemote {
                 if self.interval.is_none() {
                     let link = self.link.clone();
                     let tick =
-                        Interval::new(250, move || link.send_message(RemoteMsg::RequireFrame(1)));
+                        Interval::new(20, move || link.send_message(RemoteMsg::RequireFrame(1)));
                     self.interval = Some(tick);
                 }
                 self.protocal_out_handler()
