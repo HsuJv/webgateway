@@ -167,13 +167,22 @@ impl ProtocalImpl for VncHandler {
         // VNC client doen't support resolution change
     }
 
-    fn key_down(&mut self, key: u32) {
+    fn key_press(&mut self, key: u32) {
         if self.state != VncState::Connected {
             return;
         }
-        let key = jskey_to_x11(key);
         if let ServerMessage::None = self.msg_handling {
+            let key = jskey_to_x11(key);
             self.send_key_event(key, true);
+        }
+    }
+
+    fn mouse_event(&mut self, x: u16, y: u16, button: u8) {
+        if self.state != VncState::Connected {
+            return;
+        }
+        if let ServerMessage::None = self.msg_handling {
+            self.send_pointer_event(x, y, button);
         }
     }
 
@@ -294,7 +303,26 @@ impl VncHandler {
         sw.write_u8(if down { 1 } else { 0 }); // down
         sw.write_u16(0); // padding
         sw.write_u32(key); // key
-        ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
+                           // ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
+        self.outbuf.extend_from_slice(&out);
+    }
+
+    // +--------------+--------------+--------------+
+    // | No. of bytes | Type [Value] | Description  |
+    // +--------------+--------------+--------------+
+    // | 1            | U8 [5]       | message-type |
+    // | 1            | U8           | button-mask  |
+    // | 2            | U16          | x-position   |
+    // | 2            | U16          | y-position   |
+    // +--------------+--------------+--------------+
+    fn send_pointer_event(&mut self, x: u16, y: u16, button: u8) {
+        let mut out = Vec::with_capacity(10);
+        let mut sw = StreamWriter::new(&mut out);
+        sw.write_u8(5); // message-type
+        sw.write_u8(button); // button
+        sw.write_u16(x); // x
+        sw.write_u16(y); // y
+                         // ConsoleService::log(&format!("send mouse event {:x?} {:x?} {:x?}", x, y, button));
         self.outbuf.extend_from_slice(&out);
     }
 

@@ -1,7 +1,4 @@
-use std::{
-    rc::Rc,
-    sync::{Mutex},
-};
+use std::{rc::Rc, sync::Mutex};
 
 pub struct CanvasData {
     pub x: u16,
@@ -81,8 +78,16 @@ where
             .require_frame(incremental);
     }
 
-    pub fn key_down(&self, key: u32) {
-        self.inner.as_ref().lock().unwrap().key_down(key);
+    pub fn key_press(&self, key: u32) {
+        self.inner.as_ref().lock().unwrap().key_press(key);
+    }
+
+    pub fn mouse_event(&self, x: u16, y: u16, button: u8) {
+        self.inner
+            .as_ref()
+            .lock()
+            .unwrap()
+            .mouse_event(x, y, button);
     }
 }
 
@@ -92,7 +97,8 @@ pub trait ProtocalImpl {
     fn get_output(&mut self) -> Vec<ProtocalHandlerOutput>;
     fn set_credential(&mut self, username: &str, password: &str);
     fn set_resolution(&mut self, width: u16, height: u16);
-    fn key_down(&mut self, key: u32);
+    fn key_press(&mut self, key: u32);
+    fn mouse_event(&mut self, x: u16, y: u16, button: u8);
     fn require_frame(&mut self, incremental: u8);
 }
 

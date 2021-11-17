@@ -121,22 +121,6 @@ impl Component for PageRemote {
                 true
             }
             RemoteMsg::Connected => {
-                let window = web_sys::window().unwrap();
-                let handler = self.handler.clone();
-                let key_down = move |e: KeyboardEvent| {
-                    e.stop_propagation();
-                    handler.key_down(e.key_code());
-                };
-
-                let handler = Box::new(key_down) as Box<dyn FnMut(_)>;
-
-                let cb = Closure::wrap(handler);
-
-                window
-                    .add_event_listener_with_callback("keypress", cb.as_ref().unchecked_ref())
-                    .unwrap();
-                cb.forget();
-
                 self.connected = true;
                 true
             }
@@ -272,6 +256,7 @@ impl PageRemote {
                         let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
                         canvas.set_width(width as u32);
                         canvas.set_height(height as u32);
+                        self.bind_mouse_and_key(&canvas);
                         self.link.send_message(RemoteMsg::RequireFrame(0));
                         let ctx = match &self.canvas_ctx {
                             Some(ctx) => ctx,
@@ -339,5 +324,87 @@ impl PageRemote {
         } else {
             html! {}
         }
+    }
+
+    fn bind_mouse_and_key(&mut self, canvas: &HtmlCanvasElement) {
+        let handler = self.handler.clone();
+        let key_press = move |e: KeyboardEvent| {
+            e.stop_propagation();
+            handler.key_press(e.key_code());
+        };
+
+        let handler = Box::new(key_press) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("keypress", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        // On a conventional mouse, buttons 1, 2, and 3 correspond to the left,
+        // middle, and right buttons on the mouse.  On a wheel mouse, each step
+        // of the wheel upwards is represented by a press and release of button
+        // 4, and each step downwards is represented by a press and release of
+        // button 5.
+
+        // to do:
+        // calculate relation position
+        let handler = self.handler.clone();
+        let mouse_move = move |e: MouseEvent| {
+            e.stop_propagation();
+            handler.mouse_event(
+                e.client_x().try_into().unwrap_or(0),
+                e.client_y().try_into().unwrap_or(0),
+                0,
+            );
+        };
+
+        let handler = Box::new(mouse_move) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("mousemove", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let handler = self.handler.clone();
+        let mouse_down = move |e: MouseEvent| {
+            e.stop_propagation();
+            handler.mouse_event(
+                e.client_x().try_into().unwrap_or(0),
+                e.client_y().try_into().unwrap_or(0),
+                1 | 1 << 1,
+            );
+        };
+
+        let handler = Box::new(mouse_down) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let handler = self.handler.clone();
+        let mouse_up = move |e: MouseEvent| {
+            e.stop_propagation();
+            handler.mouse_event(
+                e.client_x().try_into().unwrap_or(0),
+                e.client_y().try_into().unwrap_or(0),
+                0,
+            );
+        };
+
+        let handler = Box::new(mouse_up) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("mouseup", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
     }
 }
