@@ -97,8 +97,8 @@ impl Component for App {
                     }
                 }
                 <footer class="footer">
-                    { "Powered by " }
-                    <a href="https://yew.rs">{ "Yew" }</a>
+                    // { "Powered by " }
+                    // <a href="https://yew.rs">{ "Yew" }</a>
                 </footer>
             </>
         }
