@@ -52,6 +52,7 @@ pub struct VncHandler {
     msg_handling: ServerMessage,
     num_rect_left: u16,
     padding_rect: Option<VncRect>,
+    outbuf: Vec<u8>,
     outs: Vec<ProtocalHandlerOutput>,
 }
 
@@ -71,6 +72,7 @@ impl ProtocalImpl for VncHandler {
             msg_handling: ServerMessage::None,
             num_rect_left: 0,
             padding_rect: None,
+            outbuf: Vec::with_capacity(128),
             outs: Vec::with_capacity(10),
         }
     }
@@ -94,6 +96,10 @@ impl ProtocalImpl for VncHandler {
         // ConsoleService::log(&format!("Get {} output", self.outs.len()));
         for o in self.outs.drain(..) {
             out.push(o);
+        }
+        if !self.outbuf.is_empty() {
+            out.push(ProtocalHandlerOutput::WsBuf(self.outbuf.clone()));
+            self.outbuf.clear();
         }
         out
     }
@@ -120,8 +126,7 @@ impl ProtocalImpl for VncHandler {
         // ConsoleService::log(&format!("challenge {:x?}", self.challenge));
         let output = des::encrypt(&self.challenge, &key);
 
-        self.outs
-            .push(ProtocalHandlerOutput::WsBuf(output.to_vec()));
+        self.outbuf.extend_from_slice(&output);
         self.state = VncState::Authing;
         self.require = 4; // the auth result message length
     }
@@ -202,8 +207,7 @@ impl VncHandler {
 
         // send client_init message
         let shared_flag = 0;
-        self.outs
-            .push(ProtocalHandlerOutput::WsBuf(vec![shared_flag]));
+        self.outbuf.push(shared_flag);
     }
 
     // No. of bytes     Type    [Value]     Description
@@ -223,7 +227,7 @@ impl VncHandler {
         sw.write_u16(0);
         sw.write_u16(self.width);
         sw.write_u16(self.height);
-        self.outs.push(ProtocalHandlerOutput::WsBuf(out));
+        self.outbuf.extend_from_slice(&out);
     }
 
     fn handle_input(&mut self) {
@@ -251,7 +255,7 @@ impl VncHandler {
             Ok(v) => {
                 self.state = VncState::Handshake;
                 self.require = 4; // the length of the security type message
-                self.outs.push(ProtocalHandlerOutput::WsBuf(v.to_vec()));
+                self.outbuf.extend_from_slice(v);
             }
             Err(e) => self.disconnect_with_err(e),
         }
