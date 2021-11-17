@@ -194,6 +194,12 @@ impl Component for PageRemote {
             }
         }
     }
+
+    fn rendered(&mut self, first_render: bool) {
+        if first_render {
+            self.handler.set_resolution(1366, 768);
+        }
+    }
 }
 
 // impl PageRemote
@@ -250,7 +256,7 @@ impl PageRemote {
                         let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
                         canvas.set_width(width as u32);
                         canvas.set_height(height as u32);
-                        self.link.send_message(RemoteMsg::RequireFrame(1));
+                        self.link.send_message(RemoteMsg::RequireFrame(0));
                         let ctx = match &self.canvas_ctx {
                             Some(ctx) => ctx,
                             None => {

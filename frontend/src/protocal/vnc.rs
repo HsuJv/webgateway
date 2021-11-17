@@ -22,6 +22,19 @@ pub enum SecurityType {
     // VeNCrypt = 19,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum VncEncoding {
+    Raw = 0,
+    CopyRect = 1,
+    RRE = 2,
+    Hextile = 5,
+    TRLE = 15,
+    ZRLE = 16,
+    CursorPseudo = -239,
+    DesktopSizePseudo = -223,
+}
+
 pub enum VncState {
     Init,
     Handshake,
@@ -40,9 +53,10 @@ pub enum ServerMessage {
 
 pub struct VncHandler {
     state: VncState,
+    // supported_versions: Vec<u8>,
+    supported_encodings: Vec<VncEncoding>,
     security_type: SecurityType,
     challenge: [u8; 16],
-    buf_num: usize,
     reader: StreamReader,
     require: usize,
     width: u16,
@@ -52,6 +66,7 @@ pub struct VncHandler {
     msg_handling: ServerMessage,
     num_rect_left: u16,
     padding_rect: Option<VncRect>,
+    outbuf: Vec<u8>,
     outs: Vec<ProtocalHandlerOutput>,
 }
 
@@ -59,9 +74,18 @@ impl ProtocalImpl for VncHandler {
     fn new() -> Self {
         Self {
             state: VncState::Init,
+            supported_encodings: vec![
+                VncEncoding::Raw,
+                // VncEncoding::CopyRect,
+                // VncEncoding::RRE,
+                // VncEncoding::Hextile,
+                // VncEncoding::TRLE,
+                // VncEncoding::ZRLE,
+                // VncEncoding::CursorPseudo,
+                // VncEncoding::DesktopSizePseudo,
+            ],
             security_type: SecurityType::Invalid,
             challenge: [0; 16],
-            buf_num: 0,
             reader: StreamReader::new(Vec::with_capacity(10)),
             require: 12, // the handleshake message length
             width: 0,
@@ -71,21 +95,26 @@ impl ProtocalImpl for VncHandler {
             msg_handling: ServerMessage::None,
             num_rect_left: 0,
             padding_rect: None,
+            outbuf: Vec::with_capacity(128),
             outs: Vec::with_capacity(10),
         }
     }
 
     fn do_input(&mut self, input: Vec<u8>) {
-        self.buf_num += input.len();
         // ConsoleService::info(&format!(
         //     "VNC input {}, left {}, require {}",
         //     input.len(),
-        //     self.buf_num,
+        //     self.reader.remain(),
         //     self.require
         // ));
         self.reader.append(input);
-        while self.buf_num >= self.require {
+        while self.reader.remain() >= self.require {
             self.handle_input();
+            // ConsoleService::info(&format!(
+            //     "left {}, require {}",
+            //     self.reader.remain(),
+            //     self.require
+            // ));
         }
     }
 
@@ -94,6 +123,10 @@ impl ProtocalImpl for VncHandler {
         // ConsoleService::log(&format!("Get {} output", self.outs.len()));
         for o in self.outs.drain(..) {
             out.push(o);
+        }
+        if !self.outbuf.is_empty() {
+            out.push(ProtocalHandlerOutput::WsBuf(self.outbuf.clone()));
+            self.outbuf.clear();
         }
         out
     }
@@ -120,13 +153,21 @@ impl ProtocalImpl for VncHandler {
         // ConsoleService::log(&format!("challenge {:x?}", self.challenge));
         let output = des::encrypt(&self.challenge, &key);
 
-        self.outs
-            .push(ProtocalHandlerOutput::WsBuf(output.to_vec()));
+        self.outbuf.extend_from_slice(&output);
         self.state = VncState::Authing;
         self.require = 4; // the auth result message length
     }
 
+    fn set_resolution(&mut self, _width: u16, _height: u16) {
+        // VNC client doen't support resolution change
+    }
+
     fn require_frame(&mut self, incremental: u8) {
+        if 0 == incremental {
+            // first frame
+            // set the client encoding
+            self.send_client_encodings();
+        }
         if let ServerMessage::None = self.msg_handling {
             self.framebuffer_update_request(incremental)
         }
@@ -136,55 +177,45 @@ impl ProtocalImpl for VncHandler {
 #[allow(dead_code)]
 impl VncHandler {
     fn read_u8(&mut self) -> u8 {
-        self.buf_num -= 1;
         self.reader.read_u8()
     }
 
     fn read_u16(&mut self) -> u16 {
-        self.buf_num -= 2;
         self.reader.read_u16()
     }
 
     fn read_u32(&mut self) -> u32 {
-        self.buf_num -= 4;
         self.reader.read_u32()
     }
 
     fn read_u64(&mut self) -> u64 {
-        self.buf_num -= 8;
         self.reader.read_u64()
     }
 
     fn read_exact_vec(&mut self, out_vec: &mut Vec<u8>, len: usize) {
-        self.buf_num -= len;
         self.reader.read_exact_vec(out_vec, len);
     }
 
     fn read_exact(&mut self, buf: &mut [u8], len: usize) {
-        self.buf_num -= len;
         self.reader.read_exact(buf, len)
     }
 
     fn read_string(&mut self, len: usize) -> String {
-        self.buf_num -= len;
         self.reader.read_string(len)
     }
 
     fn read_string_l8(&mut self) -> String {
         let len = self.read_u8() as usize;
-        self.buf_num -= len;
         self.reader.read_string(len)
     }
 
     fn read_string_l16(&mut self) -> String {
         let len = self.read_u16() as usize;
-        self.buf_num -= len;
         self.reader.read_string(len)
     }
 
     fn read_string_l32(&mut self) -> String {
         let len = self.read_u32() as usize;
-        self.buf_num -= len;
         self.reader.read_string(len)
     }
 }
@@ -201,9 +232,36 @@ impl VncHandler {
         self.require = 25; // the minimal length of server_init message
 
         // send client_init message
-        let shared_flag = 0;
-        self.outs
-            .push(ProtocalHandlerOutput::WsBuf(vec![shared_flag]));
+        let shared_flag = 1;
+        self.outbuf.push(shared_flag);
+    }
+
+    //  +--------------+--------------+---------------------+
+    // | No. of bytes | Type [Value] | Description         |
+    // +--------------+--------------+---------------------+
+    // | 1            | U8 [2]       | message-type        |
+    // | 1            |              | padding             |
+    // | 2            | U16          | number-of-encodings |
+    // +--------------+--------------+---------------------+
+
+    //    This is followed by number-of-encodings repetitions of the following:
+    //    +--------------+--------------+---------------+
+    //    | No. of bytes | Type [Value] | Description   |
+    //    +--------------+--------------+---------------+
+    //    | 4            | S32          | encoding-type |
+    //    +--------------+--------------+---------------+
+    fn send_client_encodings(&mut self) {
+        let mut out = Vec::with_capacity(10);
+        let mut sw = StreamWriter::new(&mut out);
+        sw.write_u8(2); // message-type
+        sw.write_u8(0); // padding
+        sw.write_u16(self.supported_encodings.len().try_into().unwrap()); // number-of-encodings
+
+        for i in &self.supported_encodings {
+            sw.write_u32(*i as u32);
+        }
+
+        self.outbuf.extend_from_slice(&out);
     }
 
     // No. of bytes     Type    [Value]     Description
@@ -223,7 +281,7 @@ impl VncHandler {
         sw.write_u16(0);
         sw.write_u16(self.width);
         sw.write_u16(self.height);
-        self.outs.push(ProtocalHandlerOutput::WsBuf(out));
+        self.outbuf.extend_from_slice(&out);
     }
 
     fn handle_input(&mut self) {
@@ -251,13 +309,14 @@ impl VncHandler {
             Ok(v) => {
                 self.state = VncState::Handshake;
                 self.require = 4; // the length of the security type message
-                self.outs.push(ProtocalHandlerOutput::WsBuf(v.to_vec()));
+                self.outbuf.extend_from_slice(v);
             }
             Err(e) => self.disconnect_with_err(e),
         }
     }
 
     fn do_authenticate(&mut self) {
+        // ConsoleService::log(&format!("VNC: do_authenticate {}", self.reader.remain()));
         if self.security_type == SecurityType::Invalid {
             let auth_type = self.read_u32();
             match auth_type {
@@ -365,18 +424,19 @@ impl VncHandler {
             let width = self.read_u16();
             let height = self.read_u16();
             let encoding_type = self.read_u32();
-            match encoding_type {
-                0 => self.handle_raw_encoding(x, y, width, height),
-                1 => self.handle_copy_rect_encoding(x, y, width, height),
-                2 => self.handle_rre_encoding(x, y, width, height),
-                4 => self.handle_corre_encoding(x, y, width, height),
-                5 => self.handle_hextile_encoding(x, y, width, height),
-                _ => {
-                    ConsoleService::log(&format!(
-                        "VNC: Unsupported encoding type {}",
-                        encoding_type
-                    ));
-                    self.disconnect_with_err(VNC_FAILED)
+            let encoding_enum = unsafe { std::mem::transmute(encoding_type) };
+            match encoding_enum {
+                VncEncoding::Raw => self.handle_raw_encoding(x, y, width, height),
+                VncEncoding::CopyRect => self.handle_copy_rect_encoding(x, y, width, height),
+                VncEncoding::RRE => self.handle_rre_encoding(x, y, width, height),
+                VncEncoding::Hextile => self.handle_hextile_encoding(x, y, width, height),
+                VncEncoding::TRLE => self.handle_trle_encoding(x, y, width, height),
+                VncEncoding::ZRLE => self.handle_zrle_encoding(x, y, width, height),
+                VncEncoding::CursorPseudo => {
+                    self.handle_cursor_pseudo_encoding(x, y, width, height)
+                }
+                VncEncoding::DesktopSizePseudo => {
+                    self.handle_desktop_size_pseudo_encoding(x, y, width, height)
                 }
             }
         } else {
@@ -513,11 +573,23 @@ impl VncHandler {
         unimplemented!()
     }
 
-    fn handle_corre_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
+    fn handle_hextile_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
         unimplemented!()
     }
 
-    fn handle_hextile_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
+    fn handle_trle_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
+        unimplemented!()
+    }
+
+    fn handle_zrle_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
+        unimplemented!()
+    }
+
+    fn handle_cursor_pseudo_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
+        unimplemented!()
+    }
+
+    fn handle_desktop_size_pseudo_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
         unimplemented!()
     }
 }

@@ -43,6 +43,10 @@ where
         self.inner.set_credential(username, password);
     }
 
+    pub fn set_resolution(&mut self, width: u16, height: u16) {
+        self.inner.set_resolution(width, height);
+    }
+
     pub fn require_frame(&mut self, incremental: u8) {
         self.inner.require_frame(incremental);
     }
@@ -53,26 +57,37 @@ pub trait ProtocalImpl {
     fn do_input(&mut self, input: Vec<u8>);
     fn get_output(&mut self) -> Vec<ProtocalHandlerOutput>;
     fn set_credential(&mut self, username: &str, password: &str);
+    fn set_resolution(&mut self, width: u16, height: u16);
     fn require_frame(&mut self, incremental: u8);
 }
 
 pub struct StreamReader {
     inner: Vec<Vec<u8>>,
+    remain: usize,
 }
 
 #[allow(dead_code)]
 impl StreamReader {
     pub fn new(bufs: Vec<Vec<u8>>) -> Self {
-        Self { inner: bufs }
+        Self {
+            inner: bufs,
+            remain: 0,
+        }
     }
 
     pub fn append(&mut self, buf: Vec<u8>) {
+        self.remain += buf.len();
         self.inner.push(buf);
+    }
+
+    pub fn remain(&self) -> usize {
+        self.remain
     }
 
     pub fn read_exact_vec(&mut self, out_vec: &mut Vec<u8>, n: usize) {
         let mut i = 0;
         let mut left = n;
+        self.remain -= n;
         while i < n {
             if self.inner[0].len() > left {
                 for it in self.inner[0].drain(0..left) {
@@ -92,6 +107,7 @@ impl StreamReader {
     pub fn read_exact(&mut self, out_buf: &mut [u8], n: usize) {
         let mut i = 0;
         let mut left = n;
+        self.remain -= n;
         while i < n {
             if self.inner[0].len() > left {
                 out_buf[i..i + left].copy_from_slice(&self.inner[0][0..left]);
