@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use actix::ActorContext;
 use actix::{Actor, Addr, Message, StreamHandler};
 use actix::{AsyncContext, Handler};
 use actix_session::Session;
@@ -52,6 +53,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
             Ok(ws::Message::Text(text)) => ctx.text(text),
             Ok(ws::Message::Binary(bin)) => {
                 self.agent.do_send(AgentMsg::SendToServer(bin));
+            }
+            Ok(ws::Message::Close(_)) => {
+                self.agent.do_send(AgentMsg::Shutdown);
+                ctx.stop();
             }
             _ => (),
         }

@@ -65,7 +65,7 @@ impl Actor for Agent {
 impl Handler<AgentMsg> for Agent {
     type Result = ();
 
-    fn handle(&mut self, msg: AgentMsg, _ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: AgentMsg, ctx: &mut Context<Self>) -> Self::Result {
         match msg {
             AgentMsg::Ready(ws_addr) => {
                 self.ws_addr = Some(ws_addr);
@@ -89,7 +89,10 @@ impl Handler<AgentMsg> for Agent {
                         .do_send(ws::WsMsg::SendToClient(data));
                 }
             }
-            _ => panic!("unexpected message"),
+            AgentMsg::Shutdown => {
+                info!("Agent {} - Shutdown", self.server_info);
+                ctx.stop();
+            }
         }
     }
 }
