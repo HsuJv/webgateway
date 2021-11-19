@@ -1,4 +1,4 @@
-use super::common::*;
+use super::super::common::*;
 use super::des;
 use yew::services::ConsoleService;
 
@@ -167,13 +167,13 @@ impl ProtocalImpl for VncHandler {
         // VNC client doen't support resolution change
     }
 
-    fn key_press(&mut self, key: u32) {
+    fn key_press(&mut self, key: u32, down: bool) {
         if self.state != VncState::Connected {
             return;
         }
         if let ServerMessage::None = self.msg_handling {
             let key = jskey_to_x11(key);
-            self.send_key_event(key, true);
+            self.send_key_event(key, down);
         }
     }
 
@@ -303,7 +303,7 @@ impl VncHandler {
         sw.write_u8(if down { 1 } else { 0 }); // down
         sw.write_u16(0); // padding
         sw.write_u32(key); // key
-                           // ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
+        ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
         self.outbuf.extend_from_slice(&out);
     }
 

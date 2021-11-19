@@ -78,8 +78,8 @@ where
             .require_frame(incremental);
     }
 
-    pub fn key_press(&self, key: u32) {
-        self.inner.as_ref().lock().unwrap().key_press(key);
+    pub fn key_press(&self, key: u32, down: bool) {
+        self.inner.as_ref().lock().unwrap().key_press(key, down);
     }
 
     pub fn mouse_event(&self, x: u16, y: u16, button: u8) {
@@ -97,7 +97,7 @@ pub trait ProtocalImpl {
     fn get_output(&mut self) -> Vec<ProtocalHandlerOutput>;
     fn set_credential(&mut self, username: &str, password: &str);
     fn set_resolution(&mut self, width: u16, height: u16);
-    fn key_press(&mut self, key: u32);
+    fn key_press(&mut self, key: u32, down: bool);
     fn mouse_event(&mut self, x: u16, y: u16, button: u8);
     fn require_frame(&mut self, incremental: u8);
 }

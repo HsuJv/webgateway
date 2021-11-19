@@ -15,7 +15,7 @@ use gloo::timers::callback::Interval;
 
 use crate::{
     components::{self, input::Input, ws::WebsocketMsg},
-    protocal::{common::*, vnc::VncHandler},
+    protocal::{common::*, vnc::vnc::VncHandler},
     utils::WeakComponentLink,
 };
 
@@ -327,17 +327,49 @@ impl PageRemote {
     }
 
     fn bind_mouse_and_key(&mut self, canvas: &HtmlCanvasElement) {
+        let window = web_sys::window().unwrap();
+        let handler = self.handler.clone();
+        let key_down = move |e: KeyboardEvent| {
+            e.stop_propagation();
+            ConsoleService::log(&format!("key down {}", e.key_code()));
+            handler.key_press(e.key_code(), true);
+        };
+
+        let handler = Box::new(key_down) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        window
+            .add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let handler = self.handler.clone();
+        let key_up = move |e: KeyboardEvent| {
+            e.stop_propagation();
+            handler.key_press(e.key_code(), false);
+        };
+
+        let handler = Box::new(key_up) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        window
+            .add_event_listener_with_callback("keyup", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
         let handler = self.handler.clone();
         let key_press = move |e: KeyboardEvent| {
             e.stop_propagation();
-            handler.key_press(e.key_code());
+            ConsoleService::log(&format!("key press {}", e.key_code()));
         };
 
         let handler = Box::new(key_press) as Box<dyn FnMut(_)>;
 
         let cb = Closure::wrap(handler);
 
-        canvas
+        window
             .add_event_listener_with_callback("keypress", cb.as_ref().unchecked_ref())
             .unwrap();
         cb.forget();
