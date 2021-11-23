@@ -1,5 +1,5 @@
-use super::super::common::*;
 use super::des;
+use super::{super::common::*, x11keyboard};
 use yew::services::ConsoleService;
 
 const VNC_RFB33: &[u8; 12] = b"RFB 003.003\n";
@@ -7,10 +7,6 @@ const VNC_RFB37: &[u8; 12] = b"RFB 003.007\n";
 const VNC_RFB38: &[u8; 12] = b"RFB 003.008\n";
 const VNC_VER_UNSUPPORTED: &str = "unsupported version";
 const VNC_FAILED: &str = "Connection failed with unknow reason";
-
-fn jskey_to_x11(key: u32) -> u32 {
-    key
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -167,12 +163,12 @@ impl ProtocalImpl for VncHandler {
         // VNC client doen't support resolution change
     }
 
-    fn key_press(&mut self, key: u32, down: bool) {
+    fn key_press(&mut self, key: web_sys::KeyboardEvent, down: bool) {
         if self.state != VncState::Connected {
             return;
         }
         if let ServerMessage::None = self.msg_handling {
-            let key = jskey_to_x11(key);
+            let key = x11keyboard::KeyboardUtils::get_keysym(key);
             self.send_key_event(key, down);
         }
     }
