@@ -8,6 +8,12 @@ pub struct CanvasData {
     pub data: Vec<u8>,
 }
 
+pub enum MouseEventType {
+    MouseDown,
+    MouseUp,
+    MouseMove,
+}
+
 pub enum ProtocalHandlerOutput {
     WsBuf(Vec<u8>),
     Err(String),
@@ -82,12 +88,8 @@ where
         self.inner.as_ref().lock().unwrap().key_press(key, down);
     }
 
-    pub fn mouse_event(&self, x: u16, y: u16, button: u8) {
-        self.inner
-            .as_ref()
-            .lock()
-            .unwrap()
-            .mouse_event(x, y, button);
+    pub fn mouse_event(&self, mouse: web_sys::MouseEvent, et: MouseEventType) {
+        self.inner.as_ref().lock().unwrap().mouse_event(mouse, et);
     }
 }
 
@@ -100,7 +102,7 @@ pub trait ProtocalImpl {
     fn set_credential(&mut self, username: &str, password: &str);
     fn set_resolution(&mut self, width: u16, height: u16);
     fn key_press(&mut self, key: web_sys::KeyboardEvent, down: bool);
-    fn mouse_event(&mut self, x: u16, y: u16, button: u8);
+    fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType);
     fn require_frame(&mut self, incremental: u8);
 }
 

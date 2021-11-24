@@ -187,7 +187,7 @@ impl Component for PageRemote {
                         {self.button_connect_view()}
                         <components::ws::WebsocketCtx
                         weak_link=ws_link onrecv=recv_msg/>
-                        <canvas id="remote-canvas"  ref=self.canvas.clone() ></canvas>
+                        <canvas id="remote-canvas" ref=self.canvas.clone()></canvas>
                         {self.error_msg.clone()}
                     </div>
                 </>
@@ -369,11 +369,7 @@ impl PageRemote {
         let handler = self.handler.clone();
         let mouse_move = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(
-                e.client_x().try_into().unwrap_or(0),
-                e.client_y().try_into().unwrap_or(0),
-                0,
-            );
+            handler.mouse_event(e, MouseEventType::MouseMove);
         };
 
         let handler = Box::new(mouse_move) as Box<dyn FnMut(_)>;
@@ -388,11 +384,7 @@ impl PageRemote {
         let handler = self.handler.clone();
         let mouse_down = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(
-                e.client_x().try_into().unwrap_or(0),
-                e.client_y().try_into().unwrap_or(0),
-                1 | 1 << 1,
-            );
+            handler.mouse_event(e, MouseEventType::MouseDown);
         };
 
         let handler = Box::new(mouse_down) as Box<dyn FnMut(_)>;
@@ -407,11 +399,7 @@ impl PageRemote {
         let handler = self.handler.clone();
         let mouse_up = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(
-                e.client_x().try_into().unwrap_or(0),
-                e.client_y().try_into().unwrap_or(0),
-                0,
-            );
+            handler.mouse_event(e, MouseEventType::MouseUp);
         };
 
         let handler = Box::new(mouse_up) as Box<dyn FnMut(_)>;
@@ -420,6 +408,20 @@ impl PageRemote {
 
         canvas
             .add_event_listener_with_callback("mouseup", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let get_context_menu = move |e: MouseEvent| {
+            e.prevent_default();
+            e.stop_propagation();
+        };
+
+        let handler = Box::new(get_context_menu) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("contextmenu", cb.as_ref().unchecked_ref())
             .unwrap();
         cb.forget();
     }

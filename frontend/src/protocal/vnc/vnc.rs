@@ -1,5 +1,6 @@
-use super::des;
-use super::{super::common::*, x11keyboard};
+use crate::protocal::common::MouseEventType;
+
+use super::{super::common::*, des, x11cursor::MouseUtils, x11keyboard};
 use yew::services::ConsoleService;
 
 const VNC_RFB33: &[u8; 12] = b"RFB 003.003\n";
@@ -59,6 +60,7 @@ pub struct VncHandler {
     security_type: SecurityType,
     challenge: [u8; 16],
     reader: StreamReader,
+    mouse: MouseUtils,
     require: usize,
     width: u16,
     height: u16,
@@ -88,6 +90,7 @@ impl ProtocalImpl for VncHandler {
             security_type: SecurityType::Invalid,
             challenge: [0; 16],
             reader: StreamReader::new(Vec::with_capacity(10)),
+            mouse: MouseUtils::new(),
             require: 12, // the handleshake message length
             width: 0,
             height: 0,
@@ -167,18 +170,19 @@ impl ProtocalImpl for VncHandler {
         if self.state != VncState::Connected {
             return;
         }
+        let key = x11keyboard::KeyboardUtils::get_keysym(key);
         if let ServerMessage::None = self.msg_handling {
-            let key = x11keyboard::KeyboardUtils::get_keysym(key);
             self.send_key_event(key, down);
         }
     }
 
-    fn mouse_event(&mut self, x: u16, y: u16, button: u8) {
+    fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType) {
         if self.state != VncState::Connected {
             return;
         }
+        let (x, y, mask) = self.mouse.get_mouse_sym(mouse, et);
         if let ServerMessage::None = self.msg_handling {
-            self.send_pointer_event(x, y, button);
+            self.send_pointer_event(x, y, mask);
         }
     }
 
@@ -299,7 +303,8 @@ impl VncHandler {
         sw.write_u8(if down { 1 } else { 0 }); // down
         sw.write_u16(0); // padding
         sw.write_u32(key); // key
-        ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
+
+        // ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
         self.outbuf.extend_from_slice(&out);
     }
 
@@ -311,14 +316,15 @@ impl VncHandler {
     // | 2            | U16          | x-position   |
     // | 2            | U16          | y-position   |
     // +--------------+--------------+--------------+
-    fn send_pointer_event(&mut self, x: u16, y: u16, button: u8) {
+    fn send_pointer_event(&mut self, x: u16, y: u16, mask: u8) {
         let mut out = Vec::with_capacity(10);
         let mut sw = StreamWriter::new(&mut out);
         sw.write_u8(5); // message-type
-        sw.write_u8(button); // button
+        sw.write_u8(mask); // mask
         sw.write_u16(x); // x
         sw.write_u16(y); // y
-                         // ConsoleService::log(&format!("send mouse event {:x?} {:x?} {:x?}", x, y, button));
+
+        ConsoleService::log(&format!("send mouse event {:x?} {:x?} {:#08b}", x, y, mask));
         self.outbuf.extend_from_slice(&out);
     }
 
