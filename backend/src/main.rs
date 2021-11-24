@@ -44,7 +44,7 @@ impl Default for AppData {
 fn setup_logger() {
     let logger = femme::pretty::Logger::new();
     async_log::Logger::wrap(logger, || 12)
-        .start(log::LevelFilter::Trace)
+        .start(log::LevelFilter::Warn)
         .unwrap();
 }
 

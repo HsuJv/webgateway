@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use wasm_bindgen::{Clamped, JsValue};
+use wasm_bindgen::{prelude::Closure, Clamped, JsCast, JsValue};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 use yew::{
     format::Json,
@@ -15,7 +15,7 @@ use gloo::timers::callback::Interval;
 
 use crate::{
     components::{self, input::Input, ws::WebsocketMsg},
-    protocal::{common::*, vnc::VncHandler},
+    protocal::{common::*, vnc::vnc::VncHandler},
     utils::WeakComponentLink,
 };
 
@@ -155,7 +155,7 @@ impl Component for PageRemote {
                 if self.interval.is_none() {
                     let link = self.link.clone();
                     let tick =
-                        Interval::new(250, move || link.send_message(RemoteMsg::RequireFrame(1)));
+                        Interval::new(20, move || link.send_message(RemoteMsg::RequireFrame(1)));
                     self.interval = Some(tick);
                 }
                 self.protocal_out_handler()
@@ -187,7 +187,7 @@ impl Component for PageRemote {
                         {self.button_connect_view()}
                         <components::ws::WebsocketCtx
                         weak_link=ws_link onrecv=recv_msg/>
-                        <canvas id="remote-canvas"  ref=self.canvas.clone() ></canvas>
+                        <canvas id="remote-canvas" ref=self.canvas.clone()></canvas>
                         {self.error_msg.clone()}
                     </div>
                 </>
@@ -256,6 +256,7 @@ impl PageRemote {
                         let canvas = self.canvas.cast::<HtmlCanvasElement>().unwrap();
                         canvas.set_width(width as u32);
                         canvas.set_height(height as u32);
+                        self.bind_mouse_and_key(&canvas);
                         self.link.send_message(RemoteMsg::RequireFrame(0));
                         let ctx = match &self.canvas_ctx {
                             Some(ctx) => ctx,
@@ -323,5 +324,105 @@ impl PageRemote {
         } else {
             html! {}
         }
+    }
+
+    fn bind_mouse_and_key(&mut self, canvas: &HtmlCanvasElement) {
+        let window = web_sys::window().unwrap();
+        let handler = self.handler.clone();
+        let key_down = move |e: KeyboardEvent| {
+            e.stop_propagation();
+            handler.key_press(e, true);
+        };
+
+        let handler = Box::new(key_down) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        window
+            .add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let handler = self.handler.clone();
+        let key_up = move |e: KeyboardEvent| {
+            e.stop_propagation();
+            handler.key_press(e, false);
+        };
+
+        let handler = Box::new(key_up) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        window
+            .add_event_listener_with_callback("keyup", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        // On a conventional mouse, buttons 1, 2, and 3 correspond to the left,
+        // middle, and right buttons on the mouse.  On a wheel mouse, each step
+        // of the wheel upwards is represented by a press and release of button
+        // 4, and each step downwards is represented by a press and release of
+        // button 5.
+
+        // to do:
+        // calculate relation position
+        let handler = self.handler.clone();
+        let mouse_move = move |e: MouseEvent| {
+            e.stop_propagation();
+            handler.mouse_event(e, MouseEventType::MouseMove);
+        };
+
+        let handler = Box::new(mouse_move) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("mousemove", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let handler = self.handler.clone();
+        let mouse_down = move |e: MouseEvent| {
+            e.stop_propagation();
+            handler.mouse_event(e, MouseEventType::MouseDown);
+        };
+
+        let handler = Box::new(mouse_down) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let handler = self.handler.clone();
+        let mouse_up = move |e: MouseEvent| {
+            e.stop_propagation();
+            handler.mouse_event(e, MouseEventType::MouseUp);
+        };
+
+        let handler = Box::new(mouse_up) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("mouseup", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        let get_context_menu = move |e: MouseEvent| {
+            e.prevent_default();
+            e.stop_propagation();
+        };
+
+        let handler = Box::new(get_context_menu) as Box<dyn FnMut(_)>;
+
+        let cb = Closure::wrap(handler);
+
+        canvas
+            .add_event_listener_with_callback("contextmenu", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
     }
 }

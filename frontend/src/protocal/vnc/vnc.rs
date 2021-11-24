@@ -1,5 +1,6 @@
-use super::common::*;
-use super::des;
+use crate::protocal::common::MouseEventType;
+
+use super::{super::common::*, des, x11cursor::MouseUtils, x11keyboard};
 use yew::services::ConsoleService;
 
 const VNC_RFB33: &[u8; 12] = b"RFB 003.003\n";
@@ -35,6 +36,7 @@ pub enum VncEncoding {
     DesktopSizePseudo = -223,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VncState {
     Init,
     Handshake,
@@ -58,6 +60,7 @@ pub struct VncHandler {
     security_type: SecurityType,
     challenge: [u8; 16],
     reader: StreamReader,
+    mouse: MouseUtils,
     require: usize,
     width: u16,
     height: u16,
@@ -87,6 +90,7 @@ impl ProtocalImpl for VncHandler {
             security_type: SecurityType::Invalid,
             challenge: [0; 16],
             reader: StreamReader::new(Vec::with_capacity(10)),
+            mouse: MouseUtils::new(),
             require: 12, // the handleshake message length
             width: 0,
             height: 0,
@@ -160,6 +164,26 @@ impl ProtocalImpl for VncHandler {
 
     fn set_resolution(&mut self, _width: u16, _height: u16) {
         // VNC client doen't support resolution change
+    }
+
+    fn key_press(&mut self, key: web_sys::KeyboardEvent, down: bool) {
+        if self.state != VncState::Connected {
+            return;
+        }
+        let key = x11keyboard::KeyboardUtils::get_keysym(key);
+        if let ServerMessage::None = self.msg_handling {
+            self.send_key_event(key, down);
+        }
+    }
+
+    fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType) {
+        if self.state != VncState::Connected {
+            return;
+        }
+        let (x, y, mask) = self.mouse.get_mouse_sym(mouse, et);
+        if let ServerMessage::None = self.msg_handling {
+            self.send_pointer_event(x, y, mask);
+        }
     }
 
     fn require_frame(&mut self, incremental: u8) {
@@ -261,6 +285,46 @@ impl VncHandler {
             sw.write_u32(*i as u32);
         }
 
+        self.outbuf.extend_from_slice(&out);
+    }
+
+    // +--------------+--------------+--------------+
+    // | No. of bytes | Type [Value] | Description  |
+    // +--------------+--------------+--------------+
+    // | 1            | U8 [4]       | message-type |
+    // | 1            | U8           | down-flag    |
+    // | 2            |              | padding      |
+    // | 4            | U32          | key          |
+    // +--------------+--------------+--------------+
+    fn send_key_event(&mut self, key: u32, down: bool) {
+        let mut out = Vec::with_capacity(10);
+        let mut sw = StreamWriter::new(&mut out);
+        sw.write_u8(4); // message-type
+        sw.write_u8(if down { 1 } else { 0 }); // down
+        sw.write_u16(0); // padding
+        sw.write_u32(key); // key
+
+        // ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
+        self.outbuf.extend_from_slice(&out);
+    }
+
+    // +--------------+--------------+--------------+
+    // | No. of bytes | Type [Value] | Description  |
+    // +--------------+--------------+--------------+
+    // | 1            | U8 [5]       | message-type |
+    // | 1            | U8           | button-mask  |
+    // | 2            | U16          | x-position   |
+    // | 2            | U16          | y-position   |
+    // +--------------+--------------+--------------+
+    fn send_pointer_event(&mut self, x: u16, y: u16, mask: u8) {
+        let mut out = Vec::with_capacity(10);
+        let mut sw = StreamWriter::new(&mut out);
+        sw.write_u8(5); // message-type
+        sw.write_u8(mask); // mask
+        sw.write_u16(x); // x
+        sw.write_u16(y); // y
+
+        ConsoleService::log(&format!("send mouse event {:x?} {:x?} {:#08b}", x, y, mask));
         self.outbuf.extend_from_slice(&out);
     }
 
