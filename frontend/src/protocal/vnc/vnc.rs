@@ -123,16 +123,20 @@ impl ProtocalImpl for VncHandler {
     }
 
     fn get_output(&mut self) -> Vec<ProtocalHandlerOutput> {
-        let mut out = Vec::with_capacity(self.outs.len());
-        // ConsoleService::log(&format!("Get {} output", self.outs.len()));
-        for o in self.outs.drain(..) {
-            out.push(o);
+        if let ServerMessage::None = self.msg_handling {
+            let mut out = Vec::with_capacity(self.outs.len());
+            // ConsoleService::log(&format!("Get {} output", self.outs.len()));
+            for o in self.outs.drain(..) {
+                out.push(o);
+            }
+            if !self.outbuf.is_empty() {
+                out.push(ProtocalHandlerOutput::WsBuf(self.outbuf.clone()));
+                self.outbuf.clear();
+            }
+            return out;
+        } else {
+            return Vec::new();
         }
-        if !self.outbuf.is_empty() {
-            out.push(ProtocalHandlerOutput::WsBuf(self.outbuf.clone()));
-            self.outbuf.clear();
-        }
-        out
     }
 
     fn set_credential(&mut self, _username: &str, password: &str) {
@@ -162,6 +166,10 @@ impl ProtocalImpl for VncHandler {
         self.require = 4; // the auth result message length
     }
 
+    fn set_clipboard(&mut self, text: &str) {
+        self.send_client_cut_text(text);
+    }
+
     fn set_resolution(&mut self, _width: u16, _height: u16) {
         // VNC client doen't support resolution change
     }
@@ -171,9 +179,7 @@ impl ProtocalImpl for VncHandler {
             return;
         }
         let key = x11keyboard::KeyboardUtils::get_keysym(key);
-        if let ServerMessage::None = self.msg_handling {
-            self.send_key_event(key, down);
-        }
+        self.send_key_event(key, down);
     }
 
     fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType) {
@@ -181,9 +187,7 @@ impl ProtocalImpl for VncHandler {
             return;
         }
         let (x, y, mask) = self.mouse.get_mouse_sym(mouse, et);
-        if let ServerMessage::None = self.msg_handling {
-            self.send_pointer_event(x, y, mask);
-        }
+        self.send_pointer_event(x, y, mask);
     }
 
     fn require_frame(&mut self, incremental: u8) {
@@ -324,7 +328,29 @@ impl VncHandler {
         sw.write_u16(x); // x
         sw.write_u16(y); // y
 
-        ConsoleService::log(&format!("send mouse event {:x?} {:x?} {:#08b}", x, y, mask));
+        // ConsoleService::log(&format!("send mouse event {:x?} {:x?} {:#08b}", x, y, mask));
+        self.outbuf.extend_from_slice(&out);
+    }
+
+    // +--------------+--------------+--------------+
+    // | No. of bytes | Type [Value] | Description  |
+    // +--------------+--------------+--------------+
+    // | 1            | U8 [6]       | message-type |
+    // | 3            |              | padding      |
+    // | 4            | U32          | length       |
+    // | length       | U8 array     | text         |
+    // +--------------+--------------+--------------+
+    fn send_client_cut_text(&mut self, text: &str) {
+        let mut out = Vec::with_capacity(10);
+        let mut sw = StreamWriter::new(&mut out);
+        let len: u32 = text.len().try_into().unwrap_or(0);
+        sw.write_u8(6); // message-type
+        sw.write_u8(0); // padding
+        sw.write_u16(0); // padding
+        sw.write_u32(len); // length
+        sw.write_string(text); // text
+
+        // ConsoleService::log(&format!("send client cut text {:?}", len));
         self.outbuf.extend_from_slice(&out);
     }
 
@@ -546,8 +572,6 @@ impl VncHandler {
                 self.require = 12; // the length of the next rectangle hdr
             }
         }
-
-        // ConsoleService::log(&format!("{} rects left", self.num_rects_left));
     }
 
     // Currently there is little or no support for colour maps. Some preliminary work was done

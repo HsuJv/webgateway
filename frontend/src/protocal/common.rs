@@ -68,6 +68,10 @@ where
             .set_credential(username, password);
     }
 
+    pub fn set_clipboard(&mut self, text: &str) {
+        self.inner.as_ref().lock().unwrap().set_clipboard(text);
+    }
+
     pub fn set_resolution(&self, width: u16, height: u16) {
         self.inner
             .as_ref()
@@ -100,6 +104,7 @@ pub trait ProtocalImpl {
     fn do_input(&mut self, input: Vec<u8>);
     fn get_output(&mut self) -> Vec<ProtocalHandlerOutput>;
     fn set_credential(&mut self, username: &str, password: &str);
+    fn set_clipboard(&mut self, text: &str);
     fn set_resolution(&mut self, width: u16, height: u16);
     fn key_press(&mut self, key: web_sys::KeyboardEvent, down: bool);
     fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType);
@@ -233,18 +238,18 @@ impl<'a> StreamWriter<'a> {
         self.write_u32(b as u32);
     }
 
-    pub fn write_string_with_len(&mut self, s: &str) {
+    pub fn write_string(&mut self, s: &str) {
         self.inner.extend_from_slice(s.as_bytes());
     }
 
     pub fn write_string_l16(&mut self, s: &str) {
         self.write_u16(s.len() as u16);
-        self.write_string_with_len(s);
+        self.write_string(s);
     }
 
     pub fn write_string_l32(&mut self, s: &str) {
         self.write_u32(s.len() as u32);
-        self.write_string_with_len(s);
+        self.write_string(s);
     }
 
     pub fn write_slice(&mut self, s: &[u8]) {

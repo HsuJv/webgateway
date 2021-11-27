@@ -26,7 +26,7 @@ pub struct PageRemote {
     fetch_task: Option<FetchTask>,
     connected: bool,
     handler: ProtocalHandler<VncHandler>,
-    ws_link: WeakComponentLink<components::ws::WebsocketCtx>,
+    websocket: WeakComponentLink<components::ws::WebsocketCtx>,
     request_username: bool,
     request_password: bool,
     username: String,
@@ -34,6 +34,7 @@ pub struct PageRemote {
     canvas: NodeRef,
     canvas_ctx: Option<CanvasRenderingContext2d>,
     interval: Option<Interval>,
+    clipboard: WeakComponentLink<components::clipboard::Clipboard>,
 }
 
 #[derive(Clone, PartialEq, Properties)]
@@ -47,6 +48,7 @@ pub enum RemoteMsg {
     Send(Vec<u8>),
     UpdateUsername(String),
     UpdatePassword(String),
+    UpdateClipboard(String),
     SendCredential,
     RequireFrame(u8),
 }
@@ -63,7 +65,7 @@ impl Component for PageRemote {
             fetch_task: None,
             connected: false,
             handler: ProtocalHandler::new(),
-            ws_link: WeakComponentLink::default(),
+            websocket: WeakComponentLink::default(),
             request_username: false,
             request_password: false,
             username: String::from(""),
@@ -71,6 +73,7 @@ impl Component for PageRemote {
             canvas: NodeRef::default(),
             canvas_ctx: None,
             interval: None,
+            clipboard: WeakComponentLink::default(),
         }
     }
 
@@ -129,7 +132,7 @@ impl Component for PageRemote {
                 self.protocal_out_handler()
             }
             RemoteMsg::Send(v) => {
-                self.ws_link
+                self.websocket
                     .borrow()
                     .as_ref()
                     .unwrap()
@@ -160,6 +163,14 @@ impl Component for PageRemote {
                 }
                 self.protocal_out_handler()
             }
+            RemoteMsg::UpdateClipboard(clipboard) => {
+                if clipboard.len() > 0 {
+                    self.handler.set_clipboard(&clipboard);
+                    self.protocal_out_handler()
+                } else {
+                    false
+                }
+            }
         }
     }
 
@@ -178,7 +189,9 @@ impl Component for PageRemote {
             }
         } else {
             let recv_msg = self.link.callback(RemoteMsg::Recv);
-            let ws_link = &self.ws_link;
+            let clipboard_update = self.link.callback(RemoteMsg::UpdateClipboard);
+            let websocket = &self.websocket;
+            let clipboard = &self.clipboard;
             html! {
                 <>
                     <div class="horizontal-centre vertical-centre">
@@ -186,8 +199,10 @@ impl Component for PageRemote {
                         {self.password_view()}
                         {self.button_connect_view()}
                         <components::ws::WebsocketCtx
-                        weak_link=ws_link onrecv=recv_msg/>
+                        weak_link=websocket onrecv=recv_msg/>
                         <canvas id="remote-canvas" ref=self.canvas.clone()></canvas>
+                        <components::clipboard::Clipboard
+                        weak_link=clipboard onsubmit=clipboard_update/>
                         {self.error_msg.clone()}
                     </div>
                 </>
@@ -212,7 +227,7 @@ impl PageRemote {
                 match o {
                     ProtocalHandlerOutput::Err(err) => {
                         self.error_msg = err.clone();
-                        self.ws_link
+                        self.websocket
                             .borrow_mut()
                             .as_mut()
                             .unwrap()
@@ -220,7 +235,9 @@ impl PageRemote {
                         should_render = true;
                     }
                     ProtocalHandlerOutput::WsBuf(out) => {
-                        self.link.send_message(RemoteMsg::Send(out));
+                        if out.len() > 0 {
+                            self.link.send_message(RemoteMsg::Send(out));
+                        }
                     }
                     ProtocalHandlerOutput::RequirePassword => {
                         self.request_password = true;
@@ -273,9 +290,11 @@ impl PageRemote {
                         should_render = true;
                     }
                     ProtocalHandlerOutput::SetClipboard(text) => {
-                        self.error_msg = format!("Clipboard get {}", text);
-                        ConsoleService::log(&self.error_msg);
-                        should_render = true;
+                        self.clipboard.borrow_mut().as_mut().unwrap().send_message(
+                            components::clipboard::ClipboardMsg::UpdateClipboard(text),
+                        );
+                        // ConsoleService::log(&self.error_msg);
+                        should_render = false;
                     }
                     _ => unimplemented!(),
                 }
@@ -330,6 +349,7 @@ impl PageRemote {
         let window = web_sys::window().unwrap();
         let handler = self.handler.clone();
         let key_down = move |e: KeyboardEvent| {
+            e.prevent_default();
             e.stop_propagation();
             handler.key_press(e, true);
         };
@@ -345,6 +365,7 @@ impl PageRemote {
 
         let handler = self.handler.clone();
         let key_up = move |e: KeyboardEvent| {
+            e.prevent_default();
             e.stop_propagation();
             handler.key_press(e, false);
         };
