@@ -3,7 +3,7 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
-use yew::services::ConsoleService;
+
 
 // referring:
 //    https://github.com/AltF02/x11-rs/blob/master/src/keysym.rs
@@ -1347,7 +1347,7 @@ impl KeyboardUtils {
         let capslock = event.get_modifier_state("CapsLock");
         let upper = capslock ^ shift;
         let which = event.which();
-        ConsoleService::log(&format!("which {}, shift {}", which, shift));
+        // ConsoleService::log(&format!("which {}, shift {}", which, shift));
         match which {
             8_u32 => {
                 // Backspace
@@ -1359,7 +1359,7 @@ impl KeyboardUtils {
             }
             13_u32 => {
                 // Enter
-                XK_Linefeed
+                XK_Return
             }
             16_u32 => {
                 // ShiftLeft
