@@ -200,7 +200,8 @@ impl Component for PageVnc {
                         {self.button_connect_view()}
                         <components::ws::WebsocketCtx
                         weak_link=websocket onrecv=recv_msg/>
-                        <canvas id="remote-canvas" ref=self.canvas.clone()></canvas>
+                        <canvas id="remote-canvas" ref=self.canvas.clone()
+                        tabIndex=1></canvas>
                         <components::clipboard::Clipboard
                         weak_link=clipboard onsubmit=clipboard_update/>
                         {self.error_msg.clone()}
@@ -369,7 +370,7 @@ impl PageVnc {
     }
 
     fn bind_mouse_and_key(&mut self, canvas: &HtmlCanvasElement) {
-        let window = web_sys::window().unwrap();
+        let _window = web_sys::window().unwrap();
         let handler = self.handler.clone();
         let key_down = move |e: KeyboardEvent| {
             e.prevent_default();
@@ -381,7 +382,7 @@ impl PageVnc {
 
         let cb = Closure::wrap(handler);
 
-        window
+        canvas
             .add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref())
             .unwrap();
         cb.forget();
@@ -397,7 +398,7 @@ impl PageVnc {
 
         let cb = Closure::wrap(handler);
 
-        window
+        canvas
             .add_event_listener_with_callback("keyup", cb.as_ref().unchecked_ref())
             .unwrap();
         cb.forget();

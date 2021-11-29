@@ -17,8 +17,8 @@ impl MouseUtils {
         event: web_sys::MouseEvent,
         et: MouseEventType,
     ) -> (u16, u16, u8) {
-        let x: u16 = event.client_x().try_into().unwrap_or(0);
-        let y: u16 = event.client_y().try_into().unwrap_or(0);
+        let x: u16 = event.offset_x().try_into().unwrap_or(0);
+        let y: u16 = event.offset_y().try_into().unwrap_or(0);
         let mask: u8 = (event.button() << 1).try_into().unwrap_or(0);
 
         match et {
