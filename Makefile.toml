@@ -1,8 +1,11 @@
-[tasks.install]
-dependencies = ["build", "member_flow"]
+[tasks.install-debug]
+dependencies = ["build-debug", "member_flow"]
+
+[tasks.install-release]
+dependencies = ["build-release", "member_flow"]
 
 [tasks.member_flow]
-run_task = { name = "member_flow", fork = true }
+run_task = { name = "member_flow", fork = true, parallel = true}
 
 [env]
 INSTALL_PATH= "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/build"
