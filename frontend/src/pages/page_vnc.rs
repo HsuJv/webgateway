@@ -19,7 +19,7 @@ use crate::{
     utils::WeakComponentLink,
 };
 
-pub struct PageRemote {
+pub struct PageVnc {
     link: ComponentLink<Self>,
     target: (String, u16),
     error_msg: String,
@@ -38,9 +38,9 @@ pub struct PageRemote {
 }
 
 #[derive(Clone, PartialEq, Properties)]
-pub struct RemoteProps {}
+pub struct VncProps {}
 
-pub enum RemoteMsg {
+pub enum VncMsg {
     Connect((String, u16)),
     ConnectResp(Result<Value, anyhow::Error>),
     Connected,
@@ -53,12 +53,12 @@ pub enum RemoteMsg {
     RequireFrame(u8),
 }
 
-impl Component for PageRemote {
-    type Message = RemoteMsg;
-    type Properties = RemoteProps;
+impl Component for PageVnc {
+    type Message = VncMsg;
+    type Properties = VncProps;
 
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
-        PageRemote {
+        PageVnc {
             link,
             target: (String::from(""), 0),
             error_msg: String::from(""),
@@ -79,7 +79,7 @@ impl Component for PageRemote {
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
-            RemoteMsg::Connect(target) => {
+            VncMsg::Connect(target) => {
                 self.target = target;
                 // ConsoleService::log(&self.target);
                 let to_post = json!({
@@ -98,7 +98,7 @@ impl Component for PageRemote {
                         .callback(|response: Response<Json<Result<Value, anyhow::Error>>>| {
                             // ConsoleService::error(&format!("{:?}", response));
                             let Json(data) = response.into_body();
-                            RemoteMsg::ConnectResp(data)
+                            VncMsg::ConnectResp(data)
                         });
                 // 3. pass the request and callback to the fetch service
                 let task = FetchService::fetch(request, callback).expect("failed to start request");
@@ -106,12 +106,12 @@ impl Component for PageRemote {
                 self.fetch_task = Some(task);
                 true
             }
-            RemoteMsg::ConnectResp(response) => {
+            VncMsg::ConnectResp(response) => {
                 if let Ok(response) = response {
                     self.error_msg = response["status"].to_string();
 
                     if "\"success\"" == self.error_msg {
-                        self.link.send_message(RemoteMsg::Connected);
+                        self.link.send_message(VncMsg::Connected);
                     } else {
                         self.error_msg = response["message"].to_string();
                     }
@@ -123,15 +123,15 @@ impl Component for PageRemote {
                 self.fetch_task = None;
                 true
             }
-            RemoteMsg::Connected => {
+            VncMsg::Connected => {
                 self.connected = true;
                 true
             }
-            RemoteMsg::Recv(v) => {
+            VncMsg::Recv(v) => {
                 self.handler.do_input(v);
                 self.protocal_out_handler()
             }
-            RemoteMsg::Send(v) => {
+            VncMsg::Send(v) => {
                 self.websocket
                     .borrow()
                     .as_ref()
@@ -139,31 +139,31 @@ impl Component for PageRemote {
                     .send_message(WebsocketMsg::Send(Ok(v)));
                 false
             }
-            RemoteMsg::UpdateUsername(username) => {
+            VncMsg::UpdateUsername(username) => {
                 self.username = username;
                 true
             }
-            RemoteMsg::UpdatePassword(password) => {
+            VncMsg::UpdatePassword(password) => {
                 self.password = password;
                 true
             }
-            RemoteMsg::SendCredential => {
+            VncMsg::SendCredential => {
                 self.request_username = false;
                 self.request_password = false;
                 self.handler.set_credential(&self.username, &self.password);
                 self.protocal_out_handler()
             }
-            RemoteMsg::RequireFrame(incremental) => {
+            VncMsg::RequireFrame(incremental) => {
                 self.handler.require_frame(incremental);
                 if self.interval.is_none() {
                     let link = self.link.clone();
                     let tick =
-                        Interval::new(20, move || link.send_message(RemoteMsg::RequireFrame(1)));
+                        Interval::new(20, move || link.send_message(VncMsg::RequireFrame(1)));
                     self.interval = Some(tick);
                 }
                 self.protocal_out_handler()
             }
-            RemoteMsg::UpdateClipboard(clipboard) => {
+            VncMsg::UpdateClipboard(clipboard) => {
                 if clipboard.len() > 0 {
                     self.handler.set_clipboard(&clipboard);
                     self.protocal_out_handler()
@@ -180,7 +180,7 @@ impl Component for PageRemote {
 
     fn view(&self) -> Html {
         if !self.connected {
-            let connect_remote = self.link.callback(RemoteMsg::Connect);
+            let connect_remote = self.link.callback(VncMsg::Connect);
             html! {
                 <>
                     <components::host::Host onsubmit=connect_remote/>
@@ -188,8 +188,8 @@ impl Component for PageRemote {
                 </>
             }
         } else {
-            let recv_msg = self.link.callback(RemoteMsg::Recv);
-            let clipboard_update = self.link.callback(RemoteMsg::UpdateClipboard);
+            let recv_msg = self.link.callback(VncMsg::Recv);
+            let clipboard_update = self.link.callback(VncMsg::UpdateClipboard);
             let websocket = &self.websocket;
             let clipboard = &self.clipboard;
             html! {
@@ -218,7 +218,7 @@ impl Component for PageRemote {
 }
 
 // impl PageRemote
-impl PageRemote {
+impl PageVnc {
     fn protocal_out_handler(&mut self) -> ShouldRender {
         let out = self.handler.get_output();
         let mut should_render = false;
@@ -236,7 +236,7 @@ impl PageRemote {
                     }
                     ProtocalHandlerOutput::WsBuf(out) => {
                         if out.len() > 0 {
-                            self.link.send_message(RemoteMsg::Send(out));
+                            self.link.send_message(VncMsg::Send(out));
                         }
                     }
                     ProtocalHandlerOutput::RequirePassword => {
@@ -256,17 +256,40 @@ impl PageRemote {
                             }
                         };
 
-                        let data = ImageData::new_with_u8_clamped_array_and_sh(
-                            Clamped(&cr.data),
-                            cr.width as u32,
-                            cr.height as u32,
-                        )
-                        .unwrap();
-                        // ConsoleService::log(&format!(
-                        //     "renderring at ({}, {}), width {}, height {}",
-                        //     cr.x, cr.y, cr.width, cr.height
-                        // ));
-                        let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
+                        match cr.type_ {
+                            1 => {
+                                //copy
+                                let sx = (cr.data[0] as u16) << 8 | cr.data[1] as u16;
+                                let sy = (cr.data[2] as u16) << 8 | cr.data[3] as u16;
+
+                                let _ = ctx.
+                                    draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                                    &canvas,
+                                    sx as f64,
+                                    sy as f64,
+                                    cr.width as f64,
+                                    cr.height as f64,
+                                    cr.x as f64,
+                                    cr.y as f64,
+                                    cr.width as f64,
+                                    cr.height as f64
+                                );
+                            }
+                            _ => {
+                                let data = ImageData::new_with_u8_clamped_array_and_sh(
+                                    Clamped(&cr.data),
+                                    cr.width as u32,
+                                    cr.height as u32,
+                                )
+                                .unwrap();
+                                // ConsoleService::log(&format!(
+                                //     "renderring at ({}, {}), width {}, height {}",
+                                //     cr.x, cr.y, cr.width, cr.height
+                                // ));
+                                let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
+                            }
+                        }
+
                         should_render = true;
                     }
                     ProtocalHandlerOutput::SetCanvas(width, height) => {
@@ -274,7 +297,7 @@ impl PageRemote {
                         canvas.set_width(width as u32);
                         canvas.set_height(height as u32);
                         self.bind_mouse_and_key(&canvas);
-                        self.link.send_message(RemoteMsg::RequireFrame(0));
+                        self.link.send_message(VncMsg::RequireFrame(0));
                         let ctx = match &self.canvas_ctx {
                             Some(ctx) => ctx,
                             None => {
@@ -305,7 +328,7 @@ impl PageRemote {
 
     fn username_view(&self) -> Html {
         if self.request_username {
-            let update_username = self.link.callback(RemoteMsg::UpdateUsername);
+            let update_username = self.link.callback(VncMsg::UpdateUsername);
             html! {
                 <>
                     <Input id="username" type_="text" placeholder="username" on_change={update_username}/>
@@ -319,7 +342,7 @@ impl PageRemote {
 
     fn password_view(&self) -> Html {
         if self.request_password {
-            let update_password = self.link.callback(RemoteMsg::UpdatePassword);
+            let update_password = self.link.callback(VncMsg::UpdatePassword);
             html! {
                 <>
                     <Input id="password" type_="password" placeholder="password" on_change={update_password}/>
@@ -333,7 +356,7 @@ impl PageRemote {
 
     fn button_connect_view(&self) -> Html {
         if self.request_username || self.request_password {
-            let send_credential = self.link.callback(|_| RemoteMsg::SendCredential);
+            let send_credential = self.link.callback(|_| VncMsg::SendCredential);
             html! {
                 <>
                     <button type="submit" onclick={send_credential}>{"Connect"}</button>

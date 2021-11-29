@@ -18,9 +18,7 @@
 
 * VNC Clients:
     - Raw encoding support (Done)
-        + Clipboard support is limit
     - Other encoding support (WIP)
-    - Client to server message (WIP)
 
 * SSH Clients:
     - WIP

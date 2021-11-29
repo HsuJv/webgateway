@@ -3,8 +3,6 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
-
-
 // referring:
 //    https://github.com/AltF02/x11-rs/blob/master/src/keysym.rs
 

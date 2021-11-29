@@ -1,6 +1,7 @@
 use std::{rc::Rc, sync::Mutex};
 
 pub struct CanvasData {
+    pub type_: u32,
     pub x: u16,
     pub y: u16,
     pub width: u16,

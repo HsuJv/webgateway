@@ -23,6 +23,7 @@ pub enum SecurityType {
     // VeNCrypt = 19,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum VncEncoding {
@@ -79,7 +80,7 @@ impl ProtocalImpl for VncHandler {
             state: VncState::Init,
             supported_encodings: vec![
                 VncEncoding::Raw,
-                // VncEncoding::CopyRect,
+                VncEncoding::CopyRect,
                 // VncEncoding::RRE,
                 // VncEncoding::Hextile,
                 // VncEncoding::TRLE,
@@ -554,10 +555,15 @@ impl VncHandler {
                         }
                     }
                 }
+                1 => {
+                    // copy rectangle
+                    self.read_exact_vec(&mut image_data, 4);
+                }
                 _ => unimplemented!(),
             }
             self.outs
                 .push(ProtocalHandlerOutput::RenderCanvas(CanvasData {
+                    type_: rect.encoding_type,
                     x: rect.x,
                     y: rect.y,
                     width: rect.width,
@@ -649,19 +655,31 @@ impl VncHandler {
             width,
             height,
             encoding_type: 0,
-            encoding_data: Vec::new(), // we donnot need to store the data
         });
     }
 
-    fn handle_copy_rect_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
-        unimplemented!()
+    fn handle_copy_rect_encoding(&mut self, x: u16, y: u16, width: u16, height: u16) {
+        ConsoleService::log(&format!("VNC: CopyRect {} {} {} {}", x, y, width, height));
+        self.require = 4;
+        self.padding_rect = Some(VncRect {
+            x,
+            y,
+            width,
+            height,
+            encoding_type: 1,
+        });
     }
 
     fn handle_rre_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
+        //   Note: RRE encoding is obsolescent.  In general, ZRLE and TRLE
+        //    encodings are more compact.
+
         unimplemented!()
     }
 
     fn handle_hextile_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
+        // Note: Hextile encoding is obsolescent.  In general, ZRLE and TRLE
+        // encodings are more compact.
         unimplemented!()
     }
 
@@ -800,5 +818,4 @@ struct VncRect {
     width: u16,
     height: u16,
     encoding_type: u32,
-    encoding_data: Vec<u8>,
 }
