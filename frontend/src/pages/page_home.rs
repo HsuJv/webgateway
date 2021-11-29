@@ -14,7 +14,7 @@ impl Component for PageHome {
 
     fn view(&self) -> Html {
         html! {
-            <crate::pages::page_remote::PageRemote/>
+            <crate::pages::page_vnc::PageVnc/>
         }
     }
 
