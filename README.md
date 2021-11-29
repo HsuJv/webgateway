@@ -12,7 +12,7 @@
 * Debug
     - sh run.sh
 * Relese
-    - TBD
+    - sh run.sh r
 
 ## Milestones
 

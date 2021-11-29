@@ -1,9 +1,16 @@
-[tasks.build]
+[tasks.build-debug]
 command = "wasm-pack"
 args = ["build", "--target", "web", "--out-name", "wasm", "--out-dir", "./pkg", "--dev"]
 
-[tasks.install]
-dependencies=["build", "install_wasm", "install_html"]
+[tasks.build-release]
+command = "wasm-pack"
+args = ["build", "--target", "web", "--out-name", "wasm", "--out-dir", "./pkg"]
+
+[tasks.install-debug]
+dependencies=["build-debug", "install_wasm", "install_html"]
+
+[tasks.install-release]
+dependencies=["build-release", "install_wasm", "install_html"]
 
 [tasks.install_wasm]
 script = '''

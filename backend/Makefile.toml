@@ -1,6 +1,21 @@
-[tasks.install]
-dependencies = ["build"]
+[tasks.build-debug]
+command="cargo"
+args=["build"]
+
+[tasks.build-release]
+command="cargo"
+args=["build", "--release"]
+
+[tasks.install-debug]
+dependencies = ["build-debug"]
 script = '''
     mkdir -p $INSTALL_PATH
     cp $CARGO_MAKE_CRATE_TARGET_DIRECTORY/debug/$CARGO_MAKE_CRATE_NAME $INSTALL_PATH
+    '''
+
+[tasks.install-release]
+dependencies = ["build-release"]
+script = '''
+    mkdir -p $INSTALL_PATH
+    cp $CARGO_MAKE_CRATE_TARGET_DIRECTORY/release/$CARGO_MAKE_CRATE_NAME $INSTALL_PATH
     '''
