@@ -256,17 +256,40 @@ impl PageVnc {
                             }
                         };
 
-                        let data = ImageData::new_with_u8_clamped_array_and_sh(
-                            Clamped(&cr.data),
-                            cr.width as u32,
-                            cr.height as u32,
-                        )
-                        .unwrap();
-                        // ConsoleService::log(&format!(
-                        //     "renderring at ({}, {}), width {}, height {}",
-                        //     cr.x, cr.y, cr.width, cr.height
-                        // ));
-                        let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
+                        match cr.type_ {
+                            1 => {
+                                //copy
+                                let sx = (cr.data[0] as u16) << 8 | cr.data[1] as u16;
+                                let sy = (cr.data[2] as u16) << 8 | cr.data[3] as u16;
+
+                                let _ = ctx.
+                                    draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                                    &canvas,
+                                    sx as f64,
+                                    sy as f64,
+                                    cr.width as f64,
+                                    cr.height as f64,
+                                    cr.x as f64,
+                                    cr.y as f64,
+                                    cr.width as f64,
+                                    cr.height as f64
+                                );
+                            }
+                            _ => {
+                                let data = ImageData::new_with_u8_clamped_array_and_sh(
+                                    Clamped(&cr.data),
+                                    cr.width as u32,
+                                    cr.height as u32,
+                                )
+                                .unwrap();
+                                // ConsoleService::log(&format!(
+                                //     "renderring at ({}, {}), width {}, height {}",
+                                //     cr.x, cr.y, cr.width, cr.height
+                                // ));
+                                let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
+                            }
+                        }
+
                         should_render = true;
                     }
                     ProtocalHandlerOutput::SetCanvas(width, height) => {
