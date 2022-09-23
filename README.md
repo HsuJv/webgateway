@@ -1,5 +1,5 @@
 # A Remote Access Gateway
-* Full-stack project written with Rust / Yew + Actix
+* Webassembly Terminal Services written with Rust / Yew
 
 ## Dependencies
 
@@ -24,7 +24,4 @@
     - WIP
 
 * RDP Clients:
-    - WIP
-
-* Backend database
     - WIP
