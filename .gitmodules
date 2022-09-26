@@ -1,0 +1,3 @@
+[submodule "axum-websockify"]
+	path = axum-websockify
+	url = https://github.com/HsuJv/axum-websockify.git

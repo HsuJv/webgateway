@@ -6,4 +6,4 @@ else
     cargo make install-debug
 fi
 
-cd build && ./webgateway-be
+cd build && ./axum-websockify 8080 $2 --web `pwd` 

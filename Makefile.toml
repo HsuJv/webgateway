@@ -1,11 +1,32 @@
 [tasks.install-debug]
-dependencies = ["build-debug", "member_flow"]
+dependencies = ["websockify", "wasm-debug"]
 
 [tasks.install-release]
-dependencies = ["build-release", "member_flow"]
+dependencies = ["websockify", "wasm-release"]
 
-[tasks.member_flow]
-run_task = { name = "member_flow", fork = true, parallel = true}
+[tasks.wasm-debug]
+script = '''
+cd ${VNC} && cargo make install-debug
+'''
+
+[tasks.wasm-release]
+script = '''
+cd ${VNC} && cargo make install-release
+'''
+
+
+[tasks.websockify]
+dependencies = ["install-dir"]
+script = '''
+cd ${WEBSOCKIFY} && cargo build --release && cp ./target/release/${WEBSOCKIFY} $INSTALL_PATH/
+'''
+
+[tasks.install-dir]
+script = '''
+mkdir -p $INSTALL_PATH
+'''
 
 [env]
 INSTALL_PATH= "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/build"
+WEBSOCKIFY="axum-websockify"
+VNC="webvnc"

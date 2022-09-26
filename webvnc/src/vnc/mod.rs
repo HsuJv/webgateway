@@ -1,4 +1,17 @@
+mod des;
+mod vnc;
+mod x11cursor;
+mod x11keyboard;
+
+pub enum MouseEventType {
+    MouseDown,
+    MouseUp,
+    MouseMove,
+}
+
 use std::{rc::Rc, sync::Mutex};
+
+use crate::{console_log, log};
 
 pub struct CanvasData {
     pub type_: u32,
@@ -9,47 +22,23 @@ pub struct CanvasData {
     pub data: Vec<u8>,
 }
 
-pub enum MouseEventType {
-    MouseDown,
-    MouseUp,
-    MouseMove,
-}
-
-pub enum ProtocalHandlerOutput {
+pub enum VncOutput {
     WsBuf(Vec<u8>),
     Err(String),
-    RequireUsername,
     RequirePassword,
     SetCanvas(u16, u16),
     RenderCanvas(CanvasData),
     SetClipboard(String),
 }
 
-pub struct ProtocalHandler<T>
-where
-    T: ProtocalImpl,
-{
-    inner: Rc<Mutex<T>>,
+pub struct Vnc {
+    inner: Rc<Mutex<vnc::Vnc>>,
 }
 
-impl<T> Clone for ProtocalHandler<T>
-where
-    T: ProtocalImpl,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<T> ProtocalHandler<T>
-where
-    T: ProtocalImpl,
-{
+impl Vnc {
     pub fn new() -> Self {
         Self {
-            inner: Rc::new(Mutex::new(T::new())),
+            inner: Rc::new(Mutex::new(vnc::Vnc::new())),
         }
     }
 
@@ -57,7 +46,7 @@ where
         self.inner.as_ref().lock().unwrap().do_input(input);
     }
 
-    pub fn get_output(&self) -> Vec<ProtocalHandlerOutput> {
+    pub fn get_output(&self) -> Vec<VncOutput> {
         self.inner.as_ref().lock().unwrap().get_output()
     }
 
@@ -69,16 +58,8 @@ where
             .set_credential(username, password);
     }
 
-    pub fn set_clipboard(&mut self, text: &str) {
+    pub fn set_clipboard(&self, text: &str) {
         self.inner.as_ref().lock().unwrap().set_clipboard(text);
-    }
-
-    pub fn set_resolution(&self, width: u16, height: u16) {
-        self.inner
-            .as_ref()
-            .lock()
-            .unwrap()
-            .set_resolution(width, height);
     }
 
     pub fn require_frame(&self, incremental: u8) {
@@ -98,18 +79,12 @@ where
     }
 }
 
-pub trait ProtocalImpl {
-    fn new() -> Self
-    where
-        Self: Sized;
-    fn do_input(&mut self, input: Vec<u8>);
-    fn get_output(&mut self) -> Vec<ProtocalHandlerOutput>;
-    fn set_credential(&mut self, username: &str, password: &str);
-    fn set_clipboard(&mut self, text: &str);
-    fn set_resolution(&mut self, width: u16, height: u16);
-    fn key_press(&mut self, key: web_sys::KeyboardEvent, down: bool);
-    fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType);
-    fn require_frame(&mut self, incremental: u8);
+impl Clone for Vnc {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 pub struct StreamReader {

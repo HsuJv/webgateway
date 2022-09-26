@@ -1,11 +1,10 @@
-use crate::protocal::common::MouseEventType;
-
-use super::{super::common::*, des, x11cursor::MouseUtils, x11keyboard};
-use yew::services::ConsoleService;
+use super::*;
+use super::{des, x11cursor::MouseUtils, x11keyboard, MouseEventType};
+use crate::{console_log, log};
 
 const VNC_RFB33: &[u8; 12] = b"RFB 003.003\n";
-const VNC_RFB37: &[u8; 12] = b"RFB 003.007\n";
-const VNC_RFB38: &[u8; 12] = b"RFB 003.008\n";
+// const VNC_RFB37: &[u8; 12] = b"RFB 003.007\n";
+// const VNC_RFB38: &[u8; 12] = b"RFB 003.008\n";
 const VNC_VER_UNSUPPORTED: &str = "unsupported version";
 const VNC_FAILED: &str = "Connection failed with unknow reason";
 
@@ -54,7 +53,7 @@ pub enum ServerMessage {
     None,
 }
 
-pub struct VncHandler {
+pub struct Vnc {
     state: VncState,
     // supported_versions: Vec<u8>,
     supported_encodings: Vec<VncEncoding>,
@@ -71,11 +70,11 @@ pub struct VncHandler {
     num_rect_left: u16,
     padding_rect: Option<VncRect>,
     outbuf: Vec<u8>,
-    outs: Vec<ProtocalHandlerOutput>,
+    outs: Vec<VncOutput>,
 }
 
-impl ProtocalImpl for VncHandler {
-    fn new() -> Self {
+impl Vnc {
+    pub fn new() -> Self {
         Self {
             state: VncState::Init,
             supported_encodings: vec![
@@ -105,7 +104,8 @@ impl ProtocalImpl for VncHandler {
         }
     }
 
-    fn do_input(&mut self, input: Vec<u8>) {
+
+    pub fn do_input(&mut self, input: Vec<u8>) {
         // ConsoleService::info(&format!(
         //     "VNC input {}, left {}, require {}",
         //     input.len(),
@@ -123,15 +123,15 @@ impl ProtocalImpl for VncHandler {
         }
     }
 
-    fn get_output(&mut self) -> Vec<ProtocalHandlerOutput> {
+    pub fn get_output(&mut self) -> Vec<VncOutput> {
         if let ServerMessage::None = self.msg_handling {
             let mut out = Vec::with_capacity(self.outs.len());
-            // ConsoleService::log(&format!("Get {} output", self.outs.len()));
+            // console_log!("Get {} output", self.outs.len());
             for o in self.outs.drain(..) {
                 out.push(o);
             }
             if !self.outbuf.is_empty() {
-                out.push(ProtocalHandlerOutput::WsBuf(self.outbuf.clone()));
+                out.push(VncOutput::WsBuf(self.outbuf.clone()));
                 self.outbuf.clear();
             }
             return out;
@@ -140,7 +140,7 @@ impl ProtocalImpl for VncHandler {
         }
     }
 
-    fn set_credential(&mut self, _username: &str, password: &str) {
+    pub fn set_credential(&mut self, _username: &str, password: &str) {
         // referring
         // https://github.com/whitequark/rust-vnc/blob/0697238f2706dd34a9a95c1640e385f6d8c02961/src/client.rs
         // strange behavior
@@ -159,7 +159,7 @@ impl ProtocalImpl for VncHandler {
             }
             *key_i = cs;
         }
-        // ConsoleService::log(&format!("challenge {:x?}", self.challenge));
+        // console_log!("challenge {:x?}", self.challenge);
         let output = des::encrypt(&self.challenge, &key);
 
         self.outbuf.extend_from_slice(&output);
@@ -167,15 +167,11 @@ impl ProtocalImpl for VncHandler {
         self.require = 4; // the auth result message length
     }
 
-    fn set_clipboard(&mut self, text: &str) {
+    pub fn set_clipboard(&mut self, text: &str) {
         self.send_client_cut_text(text);
     }
 
-    fn set_resolution(&mut self, _width: u16, _height: u16) {
-        // VNC client doen't support resolution change
-    }
-
-    fn key_press(&mut self, key: web_sys::KeyboardEvent, down: bool) {
+    pub fn key_press(&mut self, key: web_sys::KeyboardEvent, down: bool) {
         if self.state != VncState::Connected {
             return;
         }
@@ -183,7 +179,7 @@ impl ProtocalImpl for VncHandler {
         self.send_key_event(key, down);
     }
 
-    fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType) {
+    pub fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType) {
         if self.state != VncState::Connected {
             return;
         }
@@ -191,7 +187,7 @@ impl ProtocalImpl for VncHandler {
         self.send_pointer_event(x, y, mask);
     }
 
-    fn require_frame(&mut self, incremental: u8) {
+    pub fn require_frame(&mut self, incremental: u8) {
         if 0 == incremental {
             // first frame
             // set the client encoding
@@ -204,7 +200,7 @@ impl ProtocalImpl for VncHandler {
 }
 
 #[allow(dead_code)]
-impl VncHandler {
+impl Vnc {
     fn read_u8(&mut self) -> u8 {
         self.reader.read_u8()
     }
@@ -249,11 +245,11 @@ impl VncHandler {
     }
 }
 
-impl VncHandler {
+impl Vnc {
     fn disconnect_with_err(&mut self, err: &str) {
-        ConsoleService::error(err);
+        console_log!("{:#?}", err);
         self.state = VncState::Disconnected;
-        self.outs.push(ProtocalHandlerOutput::Err(err.to_string()));
+        self.outs.push(VncOutput::Err(err.to_string()));
     }
 
     fn send_client_initilize(&mut self) {
@@ -309,7 +305,7 @@ impl VncHandler {
         sw.write_u16(0); // padding
         sw.write_u32(key); // key
 
-        // ConsoleService::log(&format!("send key event {:x?} {:?}", key, down));
+        // console_log!("send key event {:x?} {:?}", key, down);
         self.outbuf.extend_from_slice(&out);
     }
 
@@ -329,7 +325,7 @@ impl VncHandler {
         sw.write_u16(x); // x
         sw.write_u16(y); // y
 
-        // ConsoleService::log(&format!("send mouse event {:x?} {:x?} {:#08b}", x, y, mask));
+        // console_log!("send mouse event {:x?} {:x?} {:#08b}", x, y, mask);
         self.outbuf.extend_from_slice(&out);
     }
 
@@ -351,7 +347,7 @@ impl VncHandler {
         sw.write_u32(len); // length
         sw.write_string(text); // text
 
-        // ConsoleService::log(&format!("send client cut text {:?}", len));
+        // console_log!("send client cut text {:?}", len);
         self.outbuf.extend_from_slice(&out);
     }
 
@@ -363,7 +359,7 @@ impl VncHandler {
     // 2                CARD16              width
     // 2                CARD16              height
     fn framebuffer_update_request(&mut self, incremental: u8) {
-        // ConsoleService::log(&format!("VNC: framebuffer_update_request {}", incremental));
+        // console_log!("VNC: framebuffer_update_request {}", incremental);
         let mut out: Vec<u8> = Vec::new();
         let mut sw = StreamWriter::new(&mut out);
         sw.write_u8(3);
@@ -407,7 +403,7 @@ impl VncHandler {
     }
 
     fn do_authenticate(&mut self) {
-        // ConsoleService::log(&format!("VNC: do_authenticate {}", self.reader.remain()));
+        // console_log!("VNC: do_authenticate {}", self.reader.remain());
         if self.security_type == SecurityType::Invalid {
             let auth_type = self.read_u32();
             match auth_type {
@@ -426,13 +422,13 @@ impl VncHandler {
             let mut challenge = [0u8; 16];
             self.read_exact(&mut challenge, 16);
             self.challenge = challenge;
-            self.outs.push(ProtocalHandlerOutput::RequirePassword);
+            self.outs.push(VncOutput::RequirePassword);
         }
     }
 
     fn handle_auth_result(&mut self) {
         let response = self.read_u32();
-        ConsoleService::log(&format!("Auth resp {}", response));
+        console_log!("Auth resp {}", response);
         match response {
             0 => self.send_client_initilize(),
             1 => {
@@ -456,12 +452,12 @@ impl VncHandler {
         self.read_exact(&mut pfb, 16);
         // This pixel format will be used unless the client requests a different format using the SetPixelFormat message
         self.pf = (&pfb).into();
-        ConsoleService::log(&format!("VNC: {}x{}", self.width, self.height));
+        console_log!("VNC: {}x{}", self.width, self.height);
         self.name = self.read_string_l32();
         self.state = VncState::Connected;
         self.require = 1; // any message from sever will be handled
         self.outs
-            .push(ProtocalHandlerOutput::SetCanvas(self.width, self.height));
+            .push(VncOutput::SetCanvas(self.width, self.height));
     }
 
     fn handle_server_message(&mut self) {
@@ -491,7 +487,7 @@ impl VncHandler {
     fn handle_framebuffer_update(&mut self) {
         let _padding = self.read_u8();
         self.num_rect_left = self.read_u16();
-        // ConsoleService::log(&format!("VNC: {} rects", self.num_rects_left));
+        // console_log!("VNC: {} rects", self.num_rects_left);
         self.require = 12; // the length of the first rectangle hdr
         self.msg_handling = ServerMessage::FramebufferUpdate;
     }
@@ -562,7 +558,7 @@ impl VncHandler {
                 _ => unimplemented!(),
             }
             self.outs
-                .push(ProtocalHandlerOutput::RenderCanvas(CanvasData {
+                .push(VncOutput::RenderCanvas(CanvasData {
                     type_: rect.encoding_type,
                     x: rect.x,
                     y: rect.y,
@@ -637,14 +633,14 @@ impl VncHandler {
         }
         self.require = self.read_u32() as usize;
         self.msg_handling = ServerMessage::ServerCutText;
-        ConsoleService::log(&format!("VNC: ServerCutText {} bytes", self.require));
+        console_log!("VNC: ServerCutText {} bytes", self.require);
     }
 
     fn read_cut_text(&mut self) {
         let text = self.read_string(self.require);
         self.require = 1;
         self.msg_handling = ServerMessage::None;
-        self.outs.push(ProtocalHandlerOutput::SetClipboard(text));
+        self.outs.push(VncOutput::SetClipboard(text));
     }
 
     fn handle_raw_encoding(&mut self, x: u16, y: u16, width: u16, height: u16) {
@@ -659,7 +655,7 @@ impl VncHandler {
     }
 
     fn handle_copy_rect_encoding(&mut self, x: u16, y: u16, width: u16, height: u16) {
-        ConsoleService::log(&format!("VNC: CopyRect {} {} {} {}", x, y, width, height));
+        console_log!("VNC: CopyRect {} {} {} {}", x, y, width, height);
         self.require = 4;
         self.padding_rect = Some(VncRect {
             x,

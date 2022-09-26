@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Web Gateway</title>
+    <style type="text/css">
+        .navbar {
+            width: 100%;
+            height: 20px;
+            background-color: #66ccff;
+        }
+
+        .navbar .navbar-item {
+            margin: auto;
+            position: relative;
+            padding: 40px;
+        }
+
+        .horizontal-centre {
+            position: relative;
+            text-align: center;
+        }
+
+        .vertical-centre {
+            position: relative;
+            vertical-align: middle;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
+
+        .content {
+            min-height: calc(100% - 58px - 40px);
+        }
+
+        .footer {
+            height: 58px;
+        }
+    </style>
+    <script type="module" defer>
+        import init from "/webvnc.js";
+        await init();
+    </script>
+</head>
+
+<body>
+    <div class="horizontal-centre vertical-centre"><canvas id="vnc-canvas" tabIndex=1></canvas></div>
+</body>

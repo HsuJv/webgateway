@@ -1,4 +1,4 @@
-use crate::protocal::common::MouseEventType;
+use super::MouseEventType;
 
 pub struct MouseUtils {
     down: bool,
