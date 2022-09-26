@@ -1,5 +1,5 @@
 # A Remote Access Gateway
-* Webassembly Terminal Services written with Rust / Yew
+* Webassembly Terminal Services written with Rust / Wasm
 
 ## Dependencies
 
@@ -10,9 +10,9 @@
 ## Build
 
 * Debug
-    - sh run.sh
+    - `sh run.sh d <target_server>:<port>`
 * Relese
-    - sh run.sh r
+    - `sh run.sh r <target_server>:<port>`
 
 ## Milestones
 
