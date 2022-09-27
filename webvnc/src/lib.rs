@@ -16,7 +16,7 @@ macro_rules! console_log {
 #[wasm_bindgen]
 extern "C" {
     fn setInterval(closure: &Closure<dyn FnMut()>, millis: u32) -> f64;
-    fn setTimeout(closure: &Closure<dyn FnMut()>, millis: u32) -> f64;
+    // fn setTimeout(closure: &Closure<dyn FnMut()>, millis: u32) -> f64;
     fn cancelInterval(token: f64);
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
@@ -169,21 +169,9 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc) {
                     Err(err) => console_log!("error sending message: {:?}", err),
                 },
                 vnc::VncOutput::RequirePassword => {
-                    let vnc_cloned = vnc.clone();
-                    let ws_cloned = ws.clone();
-                    // set a interval for fps enhance
-                    let get_pwd = move || {
-                        let pwd = prompt("Please input the password");
-                        vnc_cloned.set_credential(&pwd);
-                        vnc_out_handler(&ws_cloned, &vnc_cloned);
-                    };
-
-                    let handler = Box::new(get_pwd) as Box<dyn FnMut()>;
-
-                    let cb = Closure::wrap(handler);
-
-                    setTimeout(&cb, 20);
-                    cb.forget();
+                    let pwd = prompt("Please input the password");
+                    vnc.set_credential(&pwd);
+                    vnc_out_handler(ws, vnc);
                 }
                 vnc::VncOutput::RenderCanvas(cr) => {
                     let canvas = find_canvas();
@@ -230,15 +218,15 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc) {
                 }
                 vnc::VncOutput::SetCanvas(x, y) => {
                     set_canvas(vnc, *x, *y);
+                    vnc.require_frame(0);
+                    vnc_out_handler(ws, vnc);
 
                     let vnc_cloned = vnc.clone();
                     let ws_cloned = ws.clone();
-                    let mut incremental = 0;
 
                     // set a interval for fps enhance
                     let refresh = move || {
-                        vnc_cloned.require_frame(incremental);
-                        incremental = if incremental > 0 { incremental } else { 1 };
+                        vnc_cloned.require_frame(1);
                         vnc_out_handler(&ws_cloned, &vnc_cloned);
                     };
 
