@@ -1,5 +1,5 @@
 mod des;
-mod vnc;
+mod vnc_impl;
 mod x11cursor;
 mod x11keyboard;
 
@@ -10,8 +10,6 @@ pub enum MouseEventType {
 }
 
 use std::{rc::Rc, sync::Mutex};
-
-use crate::{console_log, log};
 
 pub struct CanvasData {
     pub type_: u32,
@@ -32,50 +30,45 @@ pub enum VncOutput {
 }
 
 pub struct Vnc {
-    inner: Rc<Mutex<vnc::Vnc>>,
+    inner: Rc<Mutex<vnc_impl::Vnc>>,
 }
 
 impl Vnc {
     pub fn new() -> Self {
         Self {
-            inner: Rc::new(Mutex::new(vnc::Vnc::new())),
+            inner: Rc::new(Mutex::new(vnc_impl::Vnc::new())),
         }
     }
 
     pub fn do_input(&self, input: Vec<u8>) {
-        self.inner.as_ref().lock().unwrap().do_input(input);
+        self.inner.lock().unwrap().do_input(input);
     }
 
     pub fn get_output(&self) -> Vec<VncOutput> {
-        self.inner.as_ref().lock().unwrap().get_output()
+        self.inner.lock().unwrap().get_output()
     }
 
     pub fn set_credential(&self, username: &str, password: &str) {
         self.inner
-            .as_ref()
             .lock()
             .unwrap()
             .set_credential(username, password);
     }
 
     pub fn set_clipboard(&self, text: &str) {
-        self.inner.as_ref().lock().unwrap().set_clipboard(text);
+        self.inner.lock().unwrap().set_clipboard(text);
     }
 
     pub fn require_frame(&self, incremental: u8) {
-        self.inner
-            .as_ref()
-            .lock()
-            .unwrap()
-            .require_frame(incremental);
+        self.inner.lock().unwrap().require_frame(incremental);
     }
 
     pub fn key_press(&self, key: web_sys::KeyboardEvent, down: bool) {
-        self.inner.as_ref().lock().unwrap().key_press(key, down);
+        self.inner.lock().unwrap().key_press(key, down);
     }
 
     pub fn mouse_event(&self, mouse: web_sys::MouseEvent, et: MouseEventType) {
-        self.inner.as_ref().lock().unwrap().mouse_event(mouse, et);
+        self.inner.lock().unwrap().mouse_event(mouse, et);
     }
 }
 
