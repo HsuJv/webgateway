@@ -228,8 +228,7 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc) {
 
                     let handler = Box::new(refresh) as Box<dyn FnMut()>;
 
-                    let cb: wasm_bindgen::prelude::Closure<(dyn FnMut() + 'static)> =
-                        Closure::wrap(handler);
+                    let cb = Closure::wrap(handler);
 
                     setInterval(&cb, 20);
                     cb.forget();
