@@ -138,7 +138,7 @@ impl Vnc {
         Vec::new()
     }
 
-    pub fn set_credential(&mut self, _username: &str, password: &str) {
+    pub fn set_credential(&mut self, password: &str) {
         // referring
         // https://github.com/whitequark/rust-vnc/blob/0697238f2706dd34a9a95c1640e385f6d8c02961/src/client.rs
         // strange behavior
