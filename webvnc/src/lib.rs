@@ -162,7 +162,7 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc) {
                 vnc::VncOutput::Err(err) => {
                     console_log!("Err {}", err);
                 }
-                vnc::VncOutput::WsBuf(buf) => match ws.send_with_u8_array(&buf) {
+                vnc::VncOutput::WsBuf(buf) => match ws.send_with_u8_array(buf) {
                     Ok(_) => {}
                     Err(err) => console_log!("error sending message: {:?}", err),
                 },
@@ -213,7 +213,7 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc) {
                     }
                 }
                 vnc::VncOutput::SetCanvas(x, y) => {
-                    set_canvas(&vnc, *x, *y);
+                    set_canvas(vnc, *x, *y);
 
                     let vnc_cloned = vnc.clone();
                     let ws_cloned = ws.clone();
@@ -269,7 +269,6 @@ fn start_websocket() -> Result<(), JsValue> {
 
     let vnc = Vnc::new();
 
-    let cloned_vnc = vnc.clone();
     // on message
     let cloned_ws = ws.clone();
 
@@ -277,8 +276,8 @@ fn start_websocket() -> Result<(), JsValue> {
         if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
             let array = js_sys::Uint8Array::new(&abuf);
             // let mut canvas_ctx = None;
-            cloned_vnc.do_input(array.to_vec());
-            vnc_out_handler(&cloned_ws, &cloned_vnc);
+            vnc.do_input(array.to_vec());
+            vnc_out_handler(&cloned_ws, &vnc);
         } else {
             console_log!("message event, received Unknown: {:?}", e.data());
         }
@@ -306,5 +305,6 @@ fn start_websocket() -> Result<(), JsValue> {
 
 #[wasm_bindgen(start)]
 pub fn run_app() -> Result<(), JsValue> {
+    utils::set_panic_hook();
     start_websocket()
 }

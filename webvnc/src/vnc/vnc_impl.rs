@@ -104,7 +104,6 @@ impl Vnc {
         }
     }
 
-
     pub fn do_input(&mut self, input: Vec<u8>) {
         // ConsoleService::info(&format!(
         //     "VNC input {}, left {}, require {}",
@@ -135,9 +134,8 @@ impl Vnc {
                 self.outbuf.clear();
             }
             return out;
-        } else {
-            return Vec::new();
-        }
+        };
+        Vec::new()
     }
 
     pub fn set_credential(&mut self, _username: &str, password: &str) {
@@ -544,11 +542,23 @@ impl Vnc {
                     //     }
                     // }
                     self.read_exact_vec(&mut image_data, self.require);
-                    for y in 0..rect.height {
-                        for x in 0..rect.width {
+                    let mut y = 0;
+                    let mut x = 0;
+
+                    // for y in 0..rect.height {
+                    //     for x in 0..rect.width {
+                    //         let idx = (y as usize * rect.width as usize + x as usize) * 4;
+                    //         image_data.swap(idx, idx + 2)
+                    //     }
+                    // }
+                    while y < rect.height {
+                        while x < rect.width {
                             let idx = (y as usize * rect.width as usize + x as usize) * 4;
-                            image_data.swap(idx, idx + 2)
+                            image_data.swap(idx, idx + 2);
+                            x += 1;
                         }
+                        x = 0;
+                        y += 1;
                     }
                 }
                 1 => {
@@ -557,15 +567,14 @@ impl Vnc {
                 }
                 _ => unimplemented!(),
             }
-            self.outs
-                .push(VncOutput::RenderCanvas(CanvasData {
-                    type_: rect.encoding_type,
-                    x: rect.x,
-                    y: rect.y,
-                    width: rect.width,
-                    height: rect.height,
-                    data: image_data,
-                }));
+            self.outs.push(VncOutput::RenderCanvas(CanvasData {
+                type_: rect.encoding_type,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                data: image_data,
+            }));
             self.num_rect_left -= 1;
             if 0 == self.num_rect_left {
                 self.msg_handling = ServerMessage::None;
@@ -708,7 +717,7 @@ impl Vnc {
 // 1            CARD8           green-shift
 // 1            CARD8           blue-shift
 // 1            CARD8           padding
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 struct PixelFormat {
     // the number of bits used for each pixel value on the wire
     // 8, 16, 32(usually) only
@@ -784,26 +793,6 @@ impl From<&[u8; 16]> for PixelFormat {
             padding_1,
             padding_2,
             padding_3,
-        }
-    }
-}
-
-impl Default for PixelFormat {
-    fn default() -> Self {
-        Self {
-            bits_per_pixel: 0,
-            depth: 0,
-            big_endian_flag: 0,
-            true_color_flag: 0,
-            red_max: 0,
-            green_max: 0,
-            blue_max: 0,
-            red_shift: 0,
-            green_shift: 0,
-            blue_shift: 0,
-            padding_1: 0,
-            padding_2: 0,
-            padding_3: 0,
         }
     }
 }
