@@ -48,11 +48,8 @@ impl Vnc {
         self.inner.lock().unwrap().get_output()
     }
 
-    pub fn set_credential(&self, username: &str, password: &str) {
-        self.inner
-            .lock()
-            .unwrap()
-            .set_credential(username, password);
+    pub fn set_credential(&self, password: &str) {
+        self.inner.lock().unwrap().set_credential(password);
     }
 
     pub fn set_clipboard(&self, text: &str) {
