@@ -455,7 +455,7 @@ impl Vnc {
         self.state = VncState::Connected;
         self.require = 1; // any message from sever will be handled
         self.outs
-            .push(VncOutput::SetCanvas(self.width, self.height));
+            .push(VncOutput::SetResolution(self.width, self.height));
     }
 
     fn handle_server_message(&mut self) {
@@ -567,7 +567,7 @@ impl Vnc {
                 }
                 _ => unimplemented!(),
             }
-            self.outs.push(VncOutput::RenderCanvas(CanvasData {
+            self.outs.push(VncOutput::RenderImage(ImageData {
                 type_: rect.encoding_type,
                 x: rect.x,
                 y: rect.y,
