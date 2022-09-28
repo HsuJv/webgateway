@@ -11,7 +11,7 @@ pub enum MouseEventType {
 
 use std::{rc::Rc, sync::Mutex};
 
-pub struct CanvasData {
+pub struct ImageData {
     pub type_: u32,
     pub x: u16,
     pub y: u16,
@@ -24,8 +24,8 @@ pub enum VncOutput {
     WsBuf(Vec<u8>),
     Err(String),
     RequirePassword,
-    SetCanvas(u16, u16),
-    RenderCanvas(CanvasData),
+    SetResolution(u16, u16),
+    RenderImage(ImageData),
     SetClipboard(String),
 }
 

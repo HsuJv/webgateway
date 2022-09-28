@@ -1,12 +1,12 @@
+mod canvas;
 mod utils;
 mod vnc;
 
-use vnc::{MouseEventType, Vnc};
+use canvas::CanvasUtils;
+use vnc::Vnc;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::{Clamped, JsCast};
-use web_sys::{
-    ErrorEvent, HtmlCanvasElement, ImageData, KeyboardEvent, MessageEvent, MouseEvent, WebSocket,
-};
+use wasm_bindgen::JsCast;
+use web_sys::{ErrorEvent, MessageEvent, WebSocket};
 
 #[macro_export]
 macro_rules! console_log {
@@ -23,140 +23,7 @@ extern "C" {
     pub fn prompt(s: &str) -> String;
 }
 
-fn bind_mouse_and_key(vnc: &Vnc, canvas: &HtmlCanvasElement) {
-    let _window = web_sys::window().unwrap();
-    let handler = vnc.clone();
-    let key_down = move |e: KeyboardEvent| {
-        e.prevent_default();
-        e.stop_propagation();
-        handler.key_press(e, true);
-    };
-
-    let handler = Box::new(key_down) as Box<dyn FnMut(_)>;
-
-    let cb = Closure::wrap(handler);
-
-    canvas
-        .add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref())
-        .unwrap();
-    cb.forget();
-
-    let handler = vnc.clone();
-    let key_up = move |e: KeyboardEvent| {
-        e.prevent_default();
-        e.stop_propagation();
-        handler.key_press(e, false);
-    };
-
-    let handler = Box::new(key_up) as Box<dyn FnMut(_)>;
-
-    let cb = Closure::wrap(handler);
-
-    canvas
-        .add_event_listener_with_callback("keyup", cb.as_ref().unchecked_ref())
-        .unwrap();
-    cb.forget();
-
-    // On a conventional mouse, buttons 1, 2, and 3 correspond to the left,
-    // middle, and right buttons on the mouse.  On a wheel mouse, each step
-    // of the wheel upwards is represented by a press and release of button
-    // 4, and each step downwards is represented by a press and release of
-    // button 5.
-
-    // to do:
-    // calculate relation position
-    let handler = vnc.clone();
-    let mouse_move = move |e: MouseEvent| {
-        e.stop_propagation();
-        handler.mouse_event(e, MouseEventType::MouseMove);
-    };
-
-    let handler = Box::new(mouse_move) as Box<dyn FnMut(_)>;
-
-    let cb = Closure::wrap(handler);
-
-    canvas
-        .add_event_listener_with_callback("mousemove", cb.as_ref().unchecked_ref())
-        .unwrap();
-    cb.forget();
-
-    let handler = vnc.clone();
-    let mouse_down = move |e: MouseEvent| {
-        e.stop_propagation();
-        handler.mouse_event(e, MouseEventType::MouseDown);
-    };
-
-    let handler = Box::new(mouse_down) as Box<dyn FnMut(_)>;
-
-    let cb = Closure::wrap(handler);
-
-    canvas
-        .add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())
-        .unwrap();
-    cb.forget();
-
-    let handler = vnc.clone();
-    let mouse_up = move |e: MouseEvent| {
-        e.stop_propagation();
-        handler.mouse_event(e, MouseEventType::MouseUp);
-    };
-
-    let handler = Box::new(mouse_up) as Box<dyn FnMut(_)>;
-
-    let cb = Closure::wrap(handler);
-
-    canvas
-        .add_event_listener_with_callback("mouseup", cb.as_ref().unchecked_ref())
-        .unwrap();
-    cb.forget();
-
-    let get_context_menu = move |e: MouseEvent| {
-        e.prevent_default();
-        e.stop_propagation();
-    };
-
-    let handler = Box::new(get_context_menu) as Box<dyn FnMut(_)>;
-
-    let cb = Closure::wrap(handler);
-
-    canvas
-        .add_event_listener_with_callback("contextmenu", cb.as_ref().unchecked_ref())
-        .unwrap();
-    cb.forget();
-}
-
-fn find_canvas() -> HtmlCanvasElement {
-    let document = web_sys::window().unwrap().document().unwrap();
-    let canvas = document.get_element_by_id("vnc-canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas
-        .dyn_into::<web_sys::HtmlCanvasElement>()
-        .map_err(|_| ())
-        .unwrap();
-    canvas
-}
-
-fn set_canvas(vnc: &Vnc, x: u16, y: u16) {
-    let canvas = find_canvas();
-
-    // set hight & width
-    canvas.set_height(y as u32);
-    canvas.set_width(x as u32);
-
-    // bind keyboard & mouse
-    bind_mouse_and_key(vnc, &canvas);
-
-    let ctx = canvas
-        .get_context("2d")
-        .unwrap()
-        .unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .unwrap();
-
-    ctx.rect(0 as f64, 0 as f64, x as f64, y as f64);
-    ctx.fill();
-}
-
-fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc) {
+fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
     let out = vnc.get_output();
     if !out.is_empty() {
         for ref o in out {
@@ -171,63 +38,25 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc) {
                 vnc::VncOutput::RequirePassword => {
                     let pwd = prompt("Please input the password");
                     vnc.set_credential(&pwd);
-                    vnc_out_handler(ws, vnc);
+                    vnc_out_handler(ws, vnc, canvas);
                 }
-                vnc::VncOutput::RenderCanvas(cr) => {
-                    let canvas = find_canvas();
-                    let ctx = canvas
-                        .get_context("2d")
-                        .unwrap()
-                        .unwrap()
-                        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-                        .unwrap();
-
-                    match cr.type_ {
-                        1 => {
-                            //copy
-                            let sx = (cr.data[0] as u16) << 8 | cr.data[1] as u16;
-                            let sy = (cr.data[2] as u16) << 8 | cr.data[3] as u16;
-
-                            let _ = ctx.
-                                draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-                                &canvas,
-                                sx as f64,
-                                sy as f64,
-                                cr.width as f64,
-                                cr.height as f64,
-                                cr.x as f64,
-                                cr.y as f64,
-                                cr.width as f64,
-                                cr.height as f64
-                            );
-                        }
-                        _ => {
-                            let data = ImageData::new_with_u8_clamped_array_and_sh(
-                                Clamped(&cr.data),
-                                cr.width as u32,
-                                cr.height as u32,
-                            )
-                            .unwrap();
-                            // ConsoleService::log(&format!(
-                            //     "renderring at ({}, {}), width {}, height {}",
-                            //     cr.x, cr.y, cr.width, cr.height
-                            // ));
-                            let _ = ctx.put_image_data(&data, cr.x as f64, cr.y as f64);
-                        }
-                    }
+                vnc::VncOutput::RenderImage(ri) => {
+                    canvas.draw(ri);
                 }
-                vnc::VncOutput::SetCanvas(x, y) => {
-                    set_canvas(vnc, *x, *y);
+                vnc::VncOutput::SetResolution(x, y) => {
+                    canvas.init(*x as u32, *y as u32);
+                    canvas.bind(vnc);
                     vnc.require_frame(0);
-                    vnc_out_handler(ws, vnc);
+                    vnc_out_handler(ws, vnc, canvas);
 
                     let vnc_cloned = vnc.clone();
                     let ws_cloned = ws.clone();
+                    let canvas_cloned = canvas.clone();
 
                     // set a interval for fps enhance
                     let refresh = move || {
                         vnc_cloned.require_frame(1);
-                        vnc_out_handler(&ws_cloned, &vnc_cloned);
+                        vnc_out_handler(&ws_cloned, &vnc_cloned, &canvas_cloned);
                     };
 
                     let handler = Box::new(refresh) as Box<dyn FnMut()>;
@@ -268,10 +97,10 @@ fn start_websocket() -> Result<(), JsValue> {
         host = web_sys::window().unwrap().location().host()?
     );
     let ws = WebSocket::new_with_str(&url, "binary")?;
-    ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
-
+    let canvas = CanvasUtils::new();
     let vnc = Vnc::new();
 
+    ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
     // on message
     let cloned_ws = ws.clone();
 
@@ -280,7 +109,7 @@ fn start_websocket() -> Result<(), JsValue> {
             let array = js_sys::Uint8Array::new(&abuf);
             // let mut canvas_ctx = None;
             vnc.do_input(array.to_vec());
-            vnc_out_handler(&cloned_ws, &vnc);
+            vnc_out_handler(&cloned_ws, &vnc, &canvas);
         } else {
             console_log!("message event, received Unknown: {:?}", e.data());
         }
@@ -302,6 +131,12 @@ fn start_websocket() -> Result<(), JsValue> {
     });
     ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
     onopen_callback.forget();
+
+    let onclose_callback = Closure::<dyn FnMut()>::new(move || {
+        console_log!("socket close");
+    });
+    ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
+    onclose_callback.forget();
 
     Ok(())
 }
