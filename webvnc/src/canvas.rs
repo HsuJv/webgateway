@@ -3,7 +3,9 @@ use std::rc::Rc;
 use crate::vnc::{ImageData, MouseEventType, Vnc};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent, MouseEvent};
+use web_sys::{
+    CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
+};
 struct Canvas {
     canvas: HtmlCanvasElement,
     ctx: CanvasRenderingContext2d,
@@ -65,6 +67,26 @@ impl Canvas {
         self.canvas
             .add_event_listener_with_callback("keyup", cb.as_ref().unchecked_ref())
             .unwrap();
+        cb.forget();
+
+        let handler = vnc.clone();
+        let ctrl_alt_del_btn = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("ctrlaltdel")
+            .unwrap()
+            .dyn_into::<HtmlButtonElement>()
+            .map_err(|_| ())
+            .unwrap();
+        let ctrl_alt_del = move || {
+            handler.ctrl_alt_del();
+        };
+        let handler = Box::new(ctrl_alt_del) as Box<dyn FnMut()>;
+
+        let cb = Closure::wrap(handler);
+
+        ctrl_alt_del_btn.set_onclick(Some(cb.as_ref().unchecked_ref()));
         cb.forget();
 
         // On a conventional mouse, buttons 1, 2, and 3 correspond to the left,

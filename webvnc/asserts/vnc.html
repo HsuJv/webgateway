@@ -33,13 +33,19 @@
 
 <body>
     <div id="vnc_status" style="position: relative; height: auto;" class="horizontal-centre vertical-centre"></div>
-    <div id="canvas" class="horizontal-centre vertical-centre"><canvas id="vnc-canvas" tabIndex=1></canvas></div>
+    <div id="canvas" class="horizontal-centre vertical-centre">
+        <canvas id="vnc-canvas" tabIndex=1></canvas>
+        <button type="button" id="ctrlaltdel" style="display: inline; position:absolute; right: 10px; top: 10px;">Send
+            CtrlAltDel</button>
+    </div>
     <div class="clipboardback">
         <div class="clipboard">
             <button id="clipboardbtn">clipboard</button>
             <div id="clipboardbox" class="horizontal-centre vertical-centre">
-                <div><textarea id="clipboardtxt" rows="20"></textarea></div>
-                <div><button id="clipboardsend">Send</button></div>
+                <div style="position: relative; top: 50%; transform: translateY(-50%);">
+                    <div><textarea id="clipboardtxt" rows="30"></textarea></div>
+                    <div><button id="clipboardsend">Send</button></div>
+                </div>
             </div>
         </div>
     </div>

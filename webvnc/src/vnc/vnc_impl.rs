@@ -181,6 +181,15 @@ impl Vnc {
         self.send_key_event(key, down);
     }
 
+    pub fn ctrl_alt_del(&mut self) {
+        self.send_key_event(x11keyboard::XK_Control_L, true);
+        self.send_key_event(x11keyboard::XK_Alt_L, true);
+        self.send_key_event(x11keyboard::XK_Delete, true);
+        self.send_key_event(x11keyboard::XK_Control_L, false);
+        self.send_key_event(x11keyboard::XK_Alt_L, false);
+        self.send_key_event(x11keyboard::XK_Delete, false);
+    }
+
     pub fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType) {
         if self.state != VncState::Connected {
             return;

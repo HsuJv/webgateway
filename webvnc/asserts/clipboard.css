@@ -71,8 +71,7 @@
 
 #clipboardtxt {
     position: relative;
-    width: 100%;
-    top: 25%;
+    width: 90%;
     margin: auto;
     overflow: auto;
     resize: none;

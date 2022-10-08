@@ -68,6 +68,10 @@ impl Vnc {
         self.inner.lock().unwrap().mouse_event(mouse, et);
     }
 
+    pub fn ctrl_alt_del(&self) {
+        self.inner.lock().unwrap().ctrl_alt_del();
+    }
+
     pub fn close(&self) {
         self.inner.lock().unwrap().close();
     }
