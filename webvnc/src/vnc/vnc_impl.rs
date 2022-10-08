@@ -166,6 +166,10 @@ impl Vnc {
     }
 
     pub fn set_clipboard(&mut self, text: &str) {
+        if self.state != VncState::Connected {
+            return;
+        }
+
         self.send_client_cut_text(text);
     }
 
@@ -186,6 +190,10 @@ impl Vnc {
     }
 
     pub fn require_frame(&mut self, incremental: u8) {
+        if self.state != VncState::Connected {
+            return;
+        }
+
         if 0 == incremental {
             // first frame
             // set the client encoding
@@ -194,6 +202,10 @@ impl Vnc {
         if let ServerMessage::None = self.msg_handling {
             self.framebuffer_update_request(incremental)
         }
+    }
+
+    pub fn close(&mut self) {
+        self.state = VncState::Disconnected;
     }
 }
 

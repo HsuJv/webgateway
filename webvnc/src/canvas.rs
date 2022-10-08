@@ -171,6 +171,10 @@ impl Canvas {
             }
         }
     }
+
+    fn close(&self) {
+        self.ctx.fill();
+    }
 }
 
 pub struct CanvasUtils {
@@ -202,5 +206,9 @@ impl CanvasUtils {
 
     pub fn draw(&self, ri: &ImageData) {
         self.inner.as_ref().draw(ri);
+    }
+
+    pub fn close(&self) {
+        self.inner.as_ref().close()
     }
 }

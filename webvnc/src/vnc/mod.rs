@@ -67,6 +67,10 @@ impl Vnc {
     pub fn mouse_event(&self, mouse: web_sys::MouseEvent, et: MouseEventType) {
         self.inner.lock().unwrap().mouse_event(mouse, et);
     }
+
+    pub fn close(&self) {
+        self.inner.lock().unwrap().close();
+    }
 }
 
 impl Clone for Vnc {

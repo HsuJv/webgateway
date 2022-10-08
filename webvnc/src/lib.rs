@@ -17,12 +17,45 @@ macro_rules! console_log {
 extern "C" {
     fn setInterval(closure: &Closure<dyn FnMut()>, millis: u32) -> f64;
     // fn setTimeout(closure: &Closure<dyn FnMut()>, millis: u32) -> f64;
-    fn cancelInterval(token: f64);
+    fn clearInterval(token: f64);
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
     pub fn prompt(s: &str) -> String;
     pub fn setClipBoard(s: String);
     pub fn getClipBoard() -> String;
+}
+
+static mut REFRESHER: Option<Interval> = None;
+
+#[wasm_bindgen]
+pub struct Interval {
+    _closure: Closure<dyn FnMut()>,
+    token: f64,
+}
+
+impl Interval {
+    pub fn new<F: 'static>(millis: u32, f: F) -> Interval
+    where
+        F: FnMut(),
+    {
+        // Construct a new closure.
+        let closure = Closure::new(f);
+        // Pass the closure to JS, to run every n milliseconds.
+        let token = setInterval(&closure, millis);
+
+        Interval {
+            _closure: closure,
+            token,
+        }
+    }
+}
+
+// When the Interval is destroyed, cancel its `setInterval` timer.
+impl Drop for Interval {
+    fn drop(&mut self) {
+        console_log!("interval dropped");
+        clearInterval(self.token);
+    }
 }
 
 fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
@@ -35,7 +68,10 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
                 }
                 vnc::VncOutput::WsBuf(buf) => match ws.send_with_u8_array(buf) {
                     Ok(_) => {}
-                    Err(err) => console_log!("error sending message: {:?}", err),
+                    Err(err) => {
+                        console_log!("error sending message: {:?}", err);
+                        vnc_close_handle(vnc, canvas);
+                    }
                 },
                 vnc::VncOutput::RequirePassword => {
                     let pwd = prompt("Please input the password");
@@ -61,12 +97,11 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
                         vnc_out_handler(&ws_cloned, &vnc_cloned, &canvas_cloned);
                     };
 
-                    let handler = Box::new(refresh) as Box<dyn FnMut()>;
+                    let refersher = Interval::new(20, refresh);
 
-                    let cb = Closure::wrap(handler);
-
-                    setInterval(&cb, 20);
-                    cb.forget();
+                    unsafe {
+                        REFRESHER = Some(refersher);
+                    }
                 }
                 vnc::VncOutput::SetClipboard(text) => {
                     setClipBoard(text.to_owned());
@@ -75,6 +110,21 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
             }
         }
     }
+}
+
+fn vnc_close_handle(vnc: &Vnc, canvas: &CanvasUtils) {
+    vnc.close();
+    unsafe {
+        REFRESHER.take();
+    }
+    canvas.close();
+    let status = web_sys::window()
+        .unwrap()
+        .document()
+        .unwrap()
+        .get_element_by_id("vnc_status")
+        .unwrap();
+    status.set_text_content(Some("Disconnected"));
 }
 
 fn start_websocket() -> Result<(), JsValue> {
@@ -117,13 +167,15 @@ fn start_websocket() -> Result<(), JsValue> {
     ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
     // on message
     let cloned_ws = ws.clone();
+    let vnc_cloned = vnc.clone();
+    let canvas_cloned = canvas.clone();
 
     let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
         if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
             let array = js_sys::Uint8Array::new(&abuf);
             // let mut canvas_ctx = None;
-            vnc.do_input(array.to_vec());
-            vnc_out_handler(&cloned_ws, &vnc, &canvas);
+            vnc_cloned.do_input(array.to_vec());
+            vnc_out_handler(&cloned_ws, &vnc_cloned, &canvas_cloned);
         } else {
             console_log!("message event, received Unknown: {:?}", e.data());
         }
@@ -148,6 +200,7 @@ fn start_websocket() -> Result<(), JsValue> {
 
     let onclose_callback = Closure::<dyn FnMut()>::new(move || {
         console_log!("socket close");
+        vnc_close_handle(&vnc, &canvas);
     });
     ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
     onclose_callback.forget();
