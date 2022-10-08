@@ -4,9 +4,9 @@ mod x11cursor;
 mod x11keyboard;
 
 pub enum MouseEventType {
-    MouseDown,
-    MouseUp,
-    MouseMove,
+    Down,
+    Up,
+    Move,
 }
 
 use std::{rc::Rc, sync::Mutex};

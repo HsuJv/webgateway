@@ -6,7 +6,7 @@ use canvas::CanvasUtils;
 use vnc::Vnc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{ErrorEvent, MessageEvent, WebSocket};
+use web_sys::{ErrorEvent, HtmlButtonElement, MessageEvent, WebSocket};
 
 #[macro_export]
 macro_rules! console_log {
@@ -21,6 +21,8 @@ extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
     pub fn prompt(s: &str) -> String;
+    pub fn setClipBoard(s: String);
+    pub fn getClipBoard() -> String;
 }
 
 fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
@@ -66,15 +68,10 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
                     setInterval(&cb, 20);
                     cb.forget();
                 }
-                // vnc::VncOutput::SetClipboard(text) => {
-                //     self.clipboard
-                //         .borrow_mut()
-                //         .as_mut()
-                //         .unwrap()
-                //         .send_message(components::clipboard::ClipboardMsg::UpdateClipboard(text));
-                //     // ConsoleService::log(&self.error_msg);
-                // }
-                _ => unimplemented!(),
+                vnc::VncOutput::SetClipboard(text) => {
+                    setClipBoard(text.to_owned());
+                    // ConsoleService::log(&self.error_msg);
+                }
             }
         }
     }
@@ -99,6 +96,23 @@ fn start_websocket() -> Result<(), JsValue> {
     let ws = WebSocket::new_with_str(&url, "binary")?;
     let canvas = CanvasUtils::new();
     let vnc = Vnc::new();
+
+    let clipboard = web_sys::window()
+        .unwrap()
+        .document()
+        .unwrap()
+        .get_element_by_id("clipboardsend")
+        .unwrap()
+        .dyn_into::<HtmlButtonElement>()
+        .map_err(|_| ())
+        .unwrap();
+    let vnc_cloned = vnc.clone();
+    let onclickcb = Closure::<dyn FnMut()>::new(move || {
+        console_log!("Send {:?}", getClipBoard());
+        vnc_cloned.set_clipboard(&getClipBoard());
+    });
+    clipboard.set_onclick(Some(onclickcb.as_ref().unchecked_ref()));
+    onclickcb.forget();
 
     ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
     // on message

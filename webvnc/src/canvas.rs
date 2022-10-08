@@ -78,7 +78,7 @@ impl Canvas {
         let handler = vnc.clone();
         let mouse_move = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::MouseMove);
+            handler.mouse_event(e, MouseEventType::Move);
         };
 
         let handler = Box::new(mouse_move) as Box<dyn FnMut(_)>;
@@ -93,7 +93,7 @@ impl Canvas {
         let handler = vnc.clone();
         let mouse_down = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::MouseDown);
+            handler.mouse_event(e, MouseEventType::Down);
         };
 
         let handler = Box::new(mouse_down) as Box<dyn FnMut(_)>;
@@ -108,7 +108,7 @@ impl Canvas {
         let handler = vnc.clone();
         let mouse_up = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::MouseUp);
+            handler.mouse_event(e, MouseEventType::Up);
         };
 
         let handler = Box::new(mouse_up) as Box<dyn FnMut(_)>;

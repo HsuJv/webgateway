@@ -22,16 +22,16 @@ impl MouseUtils {
         let mask: u8 = (event.button() << 1).try_into().unwrap_or(0);
 
         match et {
-            MouseEventType::MouseDown => {
+            MouseEventType::Down => {
                 self.down = true;
                 self.mask = self.down as u8 | mask;
             }
-            MouseEventType::MouseUp => {
+            MouseEventType::Up => {
                 self.down = false;
                 self.mask = self.down as u8 & (!mask);
             }
 
-            MouseEventType::MouseMove => {}
+            MouseEventType::Move => {}
         }
         (x, y, self.mask)
     }

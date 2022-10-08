@@ -30,6 +30,7 @@ features = [
     "Document",
     "ErrorEvent",
     "FileReader",
+    "HtmlButtonElement",
     "HtmlCanvasElement",
     "ImageData",
     "Location",

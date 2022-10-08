@@ -5,18 +5,6 @@
     <meta charset="utf-8" />
     <title>Web Gateway</title>
     <style type="text/css">
-        .navbar {
-            width: 100%;
-            height: 20px;
-            background-color: #66ccff;
-        }
-
-        .navbar .navbar-item {
-            margin: auto;
-            position: relative;
-            padding: 40px;
-        }
-
         .horizontal-centre {
             position: relative;
             text-align: center;
@@ -32,15 +20,11 @@
             height: 100%;
             margin: 0;
         }
-
-        .content {
-            min-height: calc(100% - 58px - 40px);
-        }
-
-        .footer {
-            height: 58px;
-        }
     </style>
+    <style>
+        @import url("clipboard.css");
+    </style>
+    <script src="jquery-3.6.1.min.js" type="text/javascript"></script>
     <script type="module" defer>
         import init from "/webvnc.js";
         await init();
@@ -48,5 +32,57 @@
 </head>
 
 <body>
-    <div class="horizontal-centre vertical-centre"><canvas id="vnc-canvas" tabIndex=1></canvas></div>
+    <div id="canvas" class="horizontal-centre vertical-centre"><canvas id="vnc-canvas" tabIndex=1></canvas></div>
+    <div class="clipboardback">
+        <div class="clipboard">
+            <button id="clipboardbtn">clipboard</button>
+            <div id="clipboardbox" class="horizontal-centre vertical-centre">
+                <div><textarea id="clipboardtxt" rows="20"></textarea></div>
+                <div><button id="clipboardsend">Send</button></div>
+            </div>
+        </div>
+    </div>
 </body>
+
+<script type="text/javascript" defer>
+    $("#clipboardbtn").attr("open1", 0);
+    $("#clipboardbtn").click(
+        function (e) {
+            e.stopPropagation();
+            if (($("#clipboardbtn")).attr("open1") == 0) {
+                open();
+            } else {
+                close();
+            }
+        }
+    );
+    $(".clipboardback").click(function () {
+        close();
+    })
+    $(".clipboard").click(function () {
+        event.stopPropagation();
+    })
+    function open() {
+        $("#clipboardbtn").attr("open1", 1);
+        $("#clipboardbtn").html(">")
+        $(".clipboard").toggleClass("clipboard-open");
+        $(".clipboardback").toggleClass("clipboardback-open");
+        $(".clipboardback").css("pointer-events", "auto");
+    }
+
+    function close() {
+        $("#clipboardbtn").attr("open1", 0);
+        $("#clipboardbtn").html("clipboard")
+        $(".clipboard").toggleClass("clipboard-open");
+        $(".clipboardback").toggleClass("clipboardback-open");
+        $(".clipboardback").css("pointer-events", "none");
+    }
+
+    function setClipBoard(s) {
+        $("#clipboardtxt").val(s);
+    }
+
+    function getClipBoard() {
+        return $("#clipboardtxt").val();
+    }
+</script>
