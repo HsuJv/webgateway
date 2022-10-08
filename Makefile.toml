@@ -24,6 +24,7 @@ cd ${WEBSOCKIFY} && cargo build --release && cp ./target/release/${WEBSOCKIFY} $
 [tasks.install-dir]
 script = '''
 mkdir -p $INSTALL_PATH
+cp asserts/* $INSTALL_PATH
 '''
 
 [env]

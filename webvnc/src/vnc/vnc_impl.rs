@@ -166,6 +166,10 @@ impl Vnc {
     }
 
     pub fn set_clipboard(&mut self, text: &str) {
+        if self.state != VncState::Connected {
+            return;
+        }
+
         self.send_client_cut_text(text);
     }
 
@@ -177,6 +181,15 @@ impl Vnc {
         self.send_key_event(key, down);
     }
 
+    pub fn ctrl_alt_del(&mut self) {
+        self.send_key_event(x11keyboard::XK_Control_L, true);
+        self.send_key_event(x11keyboard::XK_Alt_L, true);
+        self.send_key_event(x11keyboard::XK_Delete, true);
+        self.send_key_event(x11keyboard::XK_Control_L, false);
+        self.send_key_event(x11keyboard::XK_Alt_L, false);
+        self.send_key_event(x11keyboard::XK_Delete, false);
+    }
+
     pub fn mouse_event(&mut self, mouse: web_sys::MouseEvent, et: MouseEventType) {
         if self.state != VncState::Connected {
             return;
@@ -186,6 +199,10 @@ impl Vnc {
     }
 
     pub fn require_frame(&mut self, incremental: u8) {
+        if self.state != VncState::Connected {
+            return;
+        }
+
         if 0 == incremental {
             // first frame
             // set the client encoding
@@ -194,6 +211,10 @@ impl Vnc {
         if let ServerMessage::None = self.msg_handling {
             self.framebuffer_update_request(incremental)
         }
+    }
+
+    pub fn close(&mut self) {
+        self.state = VncState::Disconnected;
     }
 }
 

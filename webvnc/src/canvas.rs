@@ -3,7 +3,9 @@ use std::rc::Rc;
 use crate::vnc::{ImageData, MouseEventType, Vnc};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent, MouseEvent};
+use web_sys::{
+    CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
+};
 struct Canvas {
     canvas: HtmlCanvasElement,
     ctx: CanvasRenderingContext2d,
@@ -67,6 +69,26 @@ impl Canvas {
             .unwrap();
         cb.forget();
 
+        let handler = vnc.clone();
+        let ctrl_alt_del_btn = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("ctrlaltdel")
+            .unwrap()
+            .dyn_into::<HtmlButtonElement>()
+            .map_err(|_| ())
+            .unwrap();
+        let ctrl_alt_del = move || {
+            handler.ctrl_alt_del();
+        };
+        let handler = Box::new(ctrl_alt_del) as Box<dyn FnMut()>;
+
+        let cb = Closure::wrap(handler);
+
+        ctrl_alt_del_btn.set_onclick(Some(cb.as_ref().unchecked_ref()));
+        cb.forget();
+
         // On a conventional mouse, buttons 1, 2, and 3 correspond to the left,
         // middle, and right buttons on the mouse.  On a wheel mouse, each step
         // of the wheel upwards is represented by a press and release of button
@@ -78,7 +100,7 @@ impl Canvas {
         let handler = vnc.clone();
         let mouse_move = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::MouseMove);
+            handler.mouse_event(e, MouseEventType::Move);
         };
 
         let handler = Box::new(mouse_move) as Box<dyn FnMut(_)>;
@@ -93,7 +115,7 @@ impl Canvas {
         let handler = vnc.clone();
         let mouse_down = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::MouseDown);
+            handler.mouse_event(e, MouseEventType::Down);
         };
 
         let handler = Box::new(mouse_down) as Box<dyn FnMut(_)>;
@@ -108,7 +130,7 @@ impl Canvas {
         let handler = vnc.clone();
         let mouse_up = move |e: MouseEvent| {
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::MouseUp);
+            handler.mouse_event(e, MouseEventType::Up);
         };
 
         let handler = Box::new(mouse_up) as Box<dyn FnMut(_)>;
@@ -171,6 +193,10 @@ impl Canvas {
             }
         }
     }
+
+    fn close(&self) {
+        self.ctx.fill();
+    }
 }
 
 pub struct CanvasUtils {
@@ -202,5 +228,9 @@ impl CanvasUtils {
 
     pub fn draw(&self, ri: &ImageData) {
         self.inner.as_ref().draw(ri);
+    }
+
+    pub fn close(&self) {
+        self.inner.as_ref().close()
     }
 }

@@ -4,9 +4,9 @@ mod x11cursor;
 mod x11keyboard;
 
 pub enum MouseEventType {
-    MouseDown,
-    MouseUp,
-    MouseMove,
+    Down,
+    Up,
+    Move,
 }
 
 use std::{rc::Rc, sync::Mutex};
@@ -66,6 +66,14 @@ impl Vnc {
 
     pub fn mouse_event(&self, mouse: web_sys::MouseEvent, et: MouseEventType) {
         self.inner.lock().unwrap().mouse_event(mouse, et);
+    }
+
+    pub fn ctrl_alt_del(&self) {
+        self.inner.lock().unwrap().ctrl_alt_del();
+    }
+
+    pub fn close(&self) {
+        self.inner.lock().unwrap().close();
     }
 }
 
