@@ -65,12 +65,13 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
             match o {
                 vnc::VncOutput::Err(err) => {
                     console_log!("Err {}", err);
+                    vnc_close_handle(vnc, canvas, err);
                 }
                 vnc::VncOutput::WsBuf(buf) => match ws.send_with_u8_array(buf) {
                     Ok(_) => {}
                     Err(err) => {
-                        console_log!("error sending message: {:?}", err);
-                        vnc_close_handle(vnc, canvas);
+                        let err = format!("error sending message: {:?}", err);
+                        vnc_close_handle(vnc, canvas, &err);
                     }
                 },
                 vnc::VncOutput::RequirePassword => {
@@ -112,7 +113,7 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
     }
 }
 
-fn vnc_close_handle(vnc: &Vnc, canvas: &CanvasUtils) {
+fn vnc_close_handle(vnc: &Vnc, canvas: &CanvasUtils, msg: &str) {
     vnc.close();
     unsafe {
         REFRESHER.take();
@@ -124,7 +125,7 @@ fn vnc_close_handle(vnc: &Vnc, canvas: &CanvasUtils) {
         .unwrap()
         .get_element_by_id("vnc_status")
         .unwrap();
-    status.set_text_content(Some("Disconnected"));
+    status.set_text_content(Some(msg));
 }
 
 fn start_websocket() -> Result<(), JsValue> {
@@ -200,7 +201,7 @@ fn start_websocket() -> Result<(), JsValue> {
 
     let onclose_callback = Closure::<dyn FnMut()>::new(move || {
         console_log!("socket close");
-        vnc_close_handle(&vnc, &canvas);
+        vnc_close_handle(&vnc, &canvas, "Disconnected");
     });
     ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
     onclose_callback.forget();
