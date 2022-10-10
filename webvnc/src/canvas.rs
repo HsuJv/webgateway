@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     console_log, log,
-    vnc::{ImageData, MouseEventType, Vnc},
+    vnc::{ImageData, ImageType, MouseEventType, Vnc},
 };
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
@@ -162,7 +162,7 @@ impl Canvas {
 
     fn draw(&self, ri: &ImageData) {
         match ri.type_ {
-            1 => {
+            ImageType::Copy => {
                 //copy
                 let sx = (ri.data[0] as u16) << 8 | ri.data[1] as u16;
                 let sy = (ri.data[2] as u16) << 8 | ri.data[3] as u16;
@@ -181,7 +181,13 @@ impl Canvas {
                         ri.height as f64,
                     );
             }
-            _ => {
+            ImageType::Fill => {
+                // fill
+                let (r, g, b) = (ri.data[2], ri.data[1], ri.data[0]);
+                let style = format!("rgb({},{},{})", r, g, b);
+                self.ctx.set_fill_style(&JsValue::from_str(&style));
+            }
+            ImageType::Raw => {
                 let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
                     Clamped(&ri.data),
                     ri.width as u32,

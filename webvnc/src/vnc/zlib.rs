@@ -27,7 +27,7 @@ DEALINGS IN THE SOFTWARE.
 */
 
 use super::vnc_impl::*;
-use super::ImageData;
+use super::{ImageData, ImageType};
 use byteorder::ReadBytesExt;
 use std::io::{Read, Result};
 
@@ -330,7 +330,7 @@ impl Decoder {
                     width,
                     x: rect.x + x,
                     y: rect.y + y,
-                    type_: 0,
+                    type_: ImageType::Raw,
                 });
                 x += width;
             }

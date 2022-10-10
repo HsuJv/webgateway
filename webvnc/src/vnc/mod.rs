@@ -13,12 +13,19 @@ pub enum MouseEventType {
 use std::{rc::Rc, sync::Mutex};
 
 pub struct ImageData {
-    pub type_: u32,
+    pub type_: ImageType,
     pub x: u16,
     pub y: u16,
     pub width: u16,
     pub height: u16,
     pub data: Vec<u8>,
+}
+
+#[allow(dead_code)]
+pub enum ImageType {
+    Raw,
+    Copy,
+    Fill,
 }
 
 pub enum VncOutput {
