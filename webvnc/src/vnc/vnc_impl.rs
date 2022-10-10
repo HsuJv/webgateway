@@ -1,5 +1,5 @@
 use super::*;
-use super::{des, x11cursor::MouseUtils, x11keyboard, MouseEventType};
+use super::{des, x11cursor::MouseUtils, x11keyboard, zlib, MouseEventType};
 use crate::{console_log, log};
 
 const VNC_RFB33: &[u8; 12] = b"RFB 003.003\n";
@@ -25,6 +25,7 @@ pub enum SecurityType {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum VncEncoding {
     Raw = 0,
     CopyRect = 1,
@@ -71,6 +72,7 @@ pub struct Vnc {
     padding_rect: Option<VncRect>,
     outbuf: Vec<u8>,
     outs: Vec<VncOutput>,
+    zlib_decoder: zlib::Decoder,
 }
 
 impl Vnc {
@@ -78,18 +80,18 @@ impl Vnc {
         Self {
             state: VncState::Init,
             supported_encodings: vec![
-                VncEncoding::Raw,
+                // VncEncoding::Raw,
                 VncEncoding::CopyRect,
                 // VncEncoding::RRE,
                 // VncEncoding::Hextile,
                 // VncEncoding::TRLE,
-                // VncEncoding::ZRLE,
+                VncEncoding::ZRLE,
                 // VncEncoding::CursorPseudo,
                 // VncEncoding::DesktopSizePseudo,
             ],
             security_type: SecurityType::Invalid,
             challenge: [0; 16],
-            reader: StreamReader::new(Vec::with_capacity(10)),
+            reader: StreamReader::new(Vec::with_capacity(10), 0),
             mouse: MouseUtils::new(),
             require: 12, // the handleshake message length
             width: 0,
@@ -101,24 +103,21 @@ impl Vnc {
             padding_rect: None,
             outbuf: Vec::with_capacity(128),
             outs: Vec::with_capacity(10),
+            zlib_decoder: zlib::Decoder::new(),
         }
     }
 
     pub fn do_input(&mut self, input: Vec<u8>) {
-        // ConsoleService::info(&format!(
+        // console_log!(
         //     "VNC input {}, left {}, require {}",
         //     input.len(),
         //     self.reader.remain(),
         //     self.require
-        // ));
+        // );
         self.reader.append(input);
         while self.reader.remain() >= self.require {
             self.handle_input();
-            // ConsoleService::info(&format!(
-            //     "left {}, require {}",
-            //     self.reader.remain(),
-            //     self.require
-            // ));
+            // console_log!("left {}, require {}", self.reader.remain(), self.require);
         }
     }
 
@@ -471,7 +470,12 @@ impl Vnc {
         self.read_exact(&mut pfb, 16);
         // This pixel format will be used unless the client requests a different format using the SetPixelFormat message
         self.pf = (&pfb).into();
-        console_log!("VNC: {}x{}", self.width, self.height);
+        console_log!(
+            "VNC: {}x{}\nPixel Format {:#?}",
+            self.width,
+            self.height,
+            self.pf
+        );
         self.name = self.read_string_l32();
         self.state = VncState::Connected;
         self.require = 1; // any message from sever will be handled
@@ -506,7 +510,7 @@ impl Vnc {
     fn handle_framebuffer_update(&mut self) {
         let _padding = self.read_u8();
         self.num_rect_left = self.read_u16();
-        // console_log!("VNC: {} rects", self.num_rects_left);
+        // console_log!("VNC: {} rects", self.num_rect_left);
         self.require = 12; // the length of the first rectangle hdr
         self.msg_handling = ServerMessage::FramebufferUpdate;
     }
@@ -546,32 +550,25 @@ impl Vnc {
                 }
             }
         } else {
+            match self.padding_rect.as_ref().unwrap().encoding_type {
+                16 => {
+                    if self.require == 4 {
+                        self.require = self.read_u32() as usize;
+                        return;
+                    }
+                }
+                _ => (),
+            }
             // we now have an entire rectangle
             let rect = self.padding_rect.take().unwrap();
             let mut image_data: Vec<u8> = Vec::with_capacity(self.require);
+            self.read_exact_vec(&mut image_data, self.require);
             match rect.encoding_type {
                 0 => {
-                    // for _ in 0..rect.height {
-                    //     for _ in 0..rect.width {
-                    //         let mut pixel = [0u8; 4];
-                    //         self.read_exact(&mut pixel, 4);
-                    //         let b = pixel[0];
-                    //         let g = pixel[1];
-                    //         let r = pixel[2];
-                    //         let a = pixel[3];
-                    //         image_data.extend_from_slice(&[r, g, b, a]);
-                    //     }
-                    // }
-                    self.read_exact_vec(&mut image_data, self.require);
+                    // raw
                     let mut y = 0;
                     let mut x = 0;
 
-                    // for y in 0..rect.height {
-                    //     for x in 0..rect.width {
-                    //         let idx = (y as usize * rect.width as usize + x as usize) * 4;
-                    //         image_data.swap(idx, idx + 2)
-                    //     }
-                    // }
                     while y < rect.height {
                         while x < rect.width {
                             let idx = (y as usize * rect.width as usize + x as usize) * 4;
@@ -581,21 +578,41 @@ impl Vnc {
                         x = 0;
                         y += 1;
                     }
+                    self.outs.push(VncOutput::RenderImage(ImageData {
+                        type_: rect.encoding_type,
+                        x: rect.x,
+                        y: rect.y,
+                        width: rect.width,
+                        height: rect.height,
+                        data: image_data,
+                    }));
                 }
                 1 => {
                     // copy rectangle
-                    self.read_exact_vec(&mut image_data, 4);
+                    self.outs.push(VncOutput::RenderImage(ImageData {
+                        type_: rect.encoding_type,
+                        x: rect.x,
+                        y: rect.y,
+                        width: rect.width,
+                        height: rect.height,
+                        data: image_data,
+                    }));
                 }
-                _ => unimplemented!(),
+                16 => {
+                    // ZRLE
+                    match self.zlib_decoder.decode(&self.pf, &rect, &image_data) {
+                        Ok(images) => {
+                            for i in images {
+                                self.outs.push(VncOutput::RenderImage(i));
+                            }
+                        }
+                        Err(e) => {
+                            self.outs.push(VncOutput::Err(format!("{:?}", e)));
+                        }
+                    }
+                }
+                _ => unimplemented!("Unknow encoding {}", rect.encoding_type),
             }
-            self.outs.push(VncOutput::RenderImage(ImageData {
-                type_: rect.encoding_type,
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: rect.height,
-                data: image_data,
-            }));
             self.num_rect_left -= 1;
             if 0 == self.num_rect_left {
                 self.msg_handling = ServerMessage::None;
@@ -713,8 +730,15 @@ impl Vnc {
         unimplemented!()
     }
 
-    fn handle_zrle_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
-        unimplemented!()
+    fn handle_zrle_encoding(&mut self, x: u16, y: u16, width: u16, height: u16) {
+        self.require = 4;
+        self.padding_rect = Some(VncRect {
+            x,
+            y,
+            width,
+            height,
+            encoding_type: 16,
+        })
     }
 
     fn handle_cursor_pseudo_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
@@ -739,24 +763,24 @@ impl Vnc {
 // 1            CARD8           blue-shift
 // 1            CARD8           padding
 #[derive(Debug, Clone, Copy, Default)]
-struct PixelFormat {
+pub struct PixelFormat {
     // the number of bits used for each pixel value on the wire
     // 8, 16, 32(usually) only
-    bits_per_pixel: u8,
-    depth: u8,
+    pub bits_per_pixel: u8,
+    pub depth: u8,
     // true if multi-byte pixels are interpreted as big endian
-    big_endian_flag: u8,
+    pub big_endian_flag: u8,
     // true then the last six items specify how to extract the red, green and blue intensities from the pixel value
-    true_color_flag: u8,
+    pub true_color_flag: u8,
     // the next three always in big-endian order
     // no matter how the `big_endian_flag` is set
-    red_max: u16,
-    green_max: u16,
-    blue_max: u16,
+    pub red_max: u16,
+    pub green_max: u16,
+    pub blue_max: u16,
     // the number of shifts needed to get the red value in a pixel to the least significant bit
-    red_shift: u8,
-    green_shift: u8,
-    blue_shift: u8,
+    pub red_shift: u8,
+    pub green_shift: u8,
+    pub blue_shift: u8,
     padding_1: u8,
     padding_2: u8,
     padding_3: u8,
@@ -818,10 +842,11 @@ impl From<&[u8; 16]> for PixelFormat {
     }
 }
 
-struct VncRect {
-    x: u16,
-    y: u16,
-    width: u16,
-    height: u16,
-    encoding_type: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VncRect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub encoding_type: u32,
 }

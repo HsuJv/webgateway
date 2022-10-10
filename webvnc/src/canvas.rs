@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use crate::vnc::{ImageData, MouseEventType, Vnc};
+use crate::{
+    console_log, log,
+    vnc::{ImageData, MouseEventType, Vnc},
+};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{
@@ -183,12 +186,18 @@ impl Canvas {
                     Clamped(&ri.data),
                     ri.width as u32,
                     ri.height as u32,
-                )
-                .unwrap();
-                // ConsoleService::log(&format!(
-                //     "renderring at ({}, {}), width {}, height {}",
-                //     cr.x, cr.y, cr.width, cr.height
-                // ));
+                );
+                if data.is_err() {
+                    console_log!(
+                        "renderring failed at ({}, {}), width {}, height {}, len {}",
+                        ri.x,
+                        ri.y,
+                        ri.width,
+                        ri.height,
+                        ri.data.len(),
+                    );
+                }
+                let data = data.unwrap();
                 let _ = self.ctx.put_image_data(&data, ri.x as f64, ri.y as f64);
             }
         }

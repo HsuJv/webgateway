@@ -2,6 +2,7 @@ mod des;
 mod vnc_impl;
 mod x11cursor;
 mod x11keyboard;
+mod zlib;
 
 pub enum MouseEventType {
     Down,
@@ -92,10 +93,10 @@ pub struct StreamReader {
 
 #[allow(dead_code)]
 impl StreamReader {
-    pub fn new(bufs: Vec<Vec<u8>>) -> Self {
+    pub fn new(bufs: Vec<Vec<u8>>, len: usize) -> Self {
         Self {
             inner: bufs,
-            remain: 0,
+            remain: len,
         }
     }
 
