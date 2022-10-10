@@ -37,6 +37,18 @@ pub enum VncEncoding {
     DesktopSizePseudo = -223,
 }
 
+impl From<u32> for VncEncoding {
+    fn from(num: u32) -> Self {
+        unsafe { std::mem::transmute(num) }
+    }
+}
+
+impl From<VncEncoding> for u32 {
+    fn from(e: VncEncoding) -> Self {
+        e as u32
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VncState {
     Init,
@@ -80,12 +92,12 @@ impl Vnc {
         Self {
             state: VncState::Init,
             supported_encodings: vec![
-                // VncEncoding::Raw,
+                VncEncoding::ZRLE,
+                VncEncoding::Raw,
                 VncEncoding::CopyRect,
                 // VncEncoding::RRE,
                 // VncEncoding::Hextile,
                 // VncEncoding::TRLE,
-                VncEncoding::ZRLE,
                 // VncEncoding::CursorPseudo,
                 // VncEncoding::DesktopSizePseudo,
             ],
@@ -396,7 +408,7 @@ impl Vnc {
             VncState::Authing => self.handle_auth_result(),
             VncState::ServerInit => self.handle_server_init(),
             VncState::Connected => self.handle_server_message(),
-            _ => unimplemented!(),
+            VncState::Disconnected => (),
         }
     }
 
@@ -533,9 +545,8 @@ impl Vnc {
             let y = self.read_u16();
             let width = self.read_u16();
             let height = self.read_u16();
-            let encoding_type = self.read_u32();
-            let encoding_enum = unsafe { std::mem::transmute(encoding_type) };
-            match encoding_enum {
+            let encoding_type = self.read_u32().into();
+            match encoding_type {
                 VncEncoding::Raw => self.handle_raw_encoding(x, y, width, height),
                 VncEncoding::CopyRect => self.handle_copy_rect_encoding(x, y, width, height),
                 VncEncoding::RRE => self.handle_rre_encoding(x, y, width, height),
@@ -550,21 +561,18 @@ impl Vnc {
                 }
             }
         } else {
-            match self.padding_rect.as_ref().unwrap().encoding_type {
-                16 => {
-                    if self.require == 4 {
-                        self.require = self.read_u32() as usize;
-                        return;
-                    }
+            if let VncEncoding::ZRLE = self.padding_rect.as_ref().unwrap().encoding_type {
+                if self.require == 4 {
+                    self.require = self.read_u32() as usize;
+                    return;
                 }
-                _ => (),
             }
             // we now have an entire rectangle
             let rect = self.padding_rect.take().unwrap();
             let mut image_data: Vec<u8> = Vec::with_capacity(self.require);
             self.read_exact_vec(&mut image_data, self.require);
             match rect.encoding_type {
-                0 => {
+                VncEncoding::Raw => {
                     // raw
                     let mut y = 0;
                     let mut x = 0;
@@ -579,7 +587,7 @@ impl Vnc {
                         y += 1;
                     }
                     self.outs.push(VncOutput::RenderImage(ImageData {
-                        type_: rect.encoding_type,
+                        type_: ImageType::Raw,
                         x: rect.x,
                         y: rect.y,
                         width: rect.width,
@@ -587,10 +595,10 @@ impl Vnc {
                         data: image_data,
                     }));
                 }
-                1 => {
+                VncEncoding::CopyRect => {
                     // copy rectangle
                     self.outs.push(VncOutput::RenderImage(ImageData {
-                        type_: rect.encoding_type,
+                        type_: ImageType::Copy,
                         x: rect.x,
                         y: rect.y,
                         width: rect.width,
@@ -598,7 +606,7 @@ impl Vnc {
                         data: image_data,
                     }));
                 }
-                16 => {
+                VncEncoding::ZRLE => {
                     // ZRLE
                     match self.zlib_decoder.decode(&self.pf, &rect, &image_data) {
                         Ok(images) => {
@@ -607,11 +615,11 @@ impl Vnc {
                             }
                         }
                         Err(e) => {
-                            self.outs.push(VncOutput::Err(format!("{:?}", e)));
+                            self.disconnect_with_err(&format!("{:?}", e));
                         }
                     }
                 }
-                _ => unimplemented!("Unknow encoding {}", rect.encoding_type),
+                _ => unimplemented!("Unknow encoding {}", rect.encoding_type as u32),
             }
             self.num_rect_left -= 1;
             if 0 == self.num_rect_left {
@@ -697,7 +705,7 @@ impl Vnc {
             y,
             width,
             height,
-            encoding_type: 0,
+            encoding_type: VncEncoding::Raw,
         });
     }
 
@@ -709,7 +717,7 @@ impl Vnc {
             y,
             width,
             height,
-            encoding_type: 1,
+            encoding_type: VncEncoding::CopyRect,
         });
     }
 
@@ -737,7 +745,7 @@ impl Vnc {
             y,
             width,
             height,
-            encoding_type: 16,
+            encoding_type: VncEncoding::ZRLE,
         })
     }
 
@@ -848,5 +856,5 @@ pub struct VncRect {
     pub y: u16,
     pub width: u16,
     pub height: u16,
-    pub encoding_type: u32,
+    pub encoding_type: VncEncoding,
 }

@@ -1,10 +1,10 @@
 [tasks.build-debug]
 command = "wasm-pack"
-args = ["build", "--target", "web", "--out-name", "webvnc", "--out-dir", "./pkg", "--dev"]
+args = ["build", "--target", "web", "--out-name", "webrdp", "--out-dir", "./pkg", "--dev"]
 
 [tasks.build-release]
 command = "wasm-pack"
-args = ["build", "--target", "web", "--out-name", "webvnc", "--out-dir", "./pkg"]
+args = ["build", "--target", "web", "--out-name", "webrdp", "--out-dir", "./pkg"]
 
 [tasks.install-debug]
 dependencies=["build-debug", "install_wasm", "install_html"]
@@ -15,8 +15,8 @@ dependencies=["build-release", "install_wasm", "install_html"]
 [tasks.install_wasm]
 script = '''
     mkdir -p $INSTALL_PATH
-    cp ./pkg/webvnc.js $INSTALL_PATH
-    cp ./pkg/webvnc_bg.wasm $INSTALL_PATH
+    cp ./pkg/webrdp.js $INSTALL_PATH
+    cp ./pkg/webrdp_bg.wasm $INSTALL_PATH
     '''
 
 [tasks.install_html]

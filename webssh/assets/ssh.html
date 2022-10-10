@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Web Gateway</title>
+    <style type="text/css">
+        .horizontal-centre {
+            position: relative;
+            text-align: center;
+        }
+
+        .vertical-centre {
+            position: relative;
+            vertical-align: middle;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
+    </style>
+    <script src="jquery-3.6.1.min.js" type="text/javascript"></script>
+    <script type="module" defer>
+        import init from "/webssh.js";
+        await init();
+    </script>
+</head>
+
+<body>
+</body>
