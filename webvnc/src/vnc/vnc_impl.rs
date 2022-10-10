@@ -92,12 +92,12 @@ impl Vnc {
         Self {
             state: VncState::Init,
             supported_encodings: vec![
-                // VncEncoding::Raw,
+                VncEncoding::ZRLE,
+                VncEncoding::Raw,
                 VncEncoding::CopyRect,
                 // VncEncoding::RRE,
                 // VncEncoding::Hextile,
                 // VncEncoding::TRLE,
-                VncEncoding::ZRLE,
                 // VncEncoding::CursorPseudo,
                 // VncEncoding::DesktopSizePseudo,
             ],
