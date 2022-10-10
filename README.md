@@ -18,6 +18,7 @@
 
 * VNC Clients:
     - Raw encoding support (Done)
+    - ZRLE encoding support (Done) (Default)
     - Other encoding support (WIP)
 
 * SSH Clients:
