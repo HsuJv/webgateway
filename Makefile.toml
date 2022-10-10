@@ -6,12 +6,16 @@ dependencies = ["websockify", "wasm-release"]
 
 [tasks.wasm-debug]
 script = '''
-cd ${VNC} && cargo make install-debug
+cd ${VNC} && cargo make install-debug && cd ..
+cd ${RDP} && cargo make install-debug && cd ..
+cd ${SSH} && cargo make install-debug && cd ..
 '''
 
 [tasks.wasm-release]
 script = '''
-cd ${VNC} && cargo make install-release
+cd ${VNC} && cargo make install-release && cd ..
+cd ${RDP} && cargo make install-release && cd ..
+cd ${SSH} && cargo make install-release && cd ..
 '''
 
 
@@ -24,10 +28,12 @@ cd ${WEBSOCKIFY} && cargo build --release && cp ./target/release/${WEBSOCKIFY} $
 [tasks.install-dir]
 script = '''
 mkdir -p $INSTALL_PATH
-cp asserts/* $INSTALL_PATH
+cp assets/* $INSTALL_PATH
 '''
 
 [env]
 INSTALL_PATH= "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/build"
 WEBSOCKIFY="axum-websockify"
 VNC="webvnc"
+RDP="webrdp"
+SSH="webssh"
