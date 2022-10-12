@@ -7,7 +7,8 @@ use crate::{
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{
-    CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
+    CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, HtmlImageElement,
+    KeyboardEvent, MouseEvent,
 };
 struct Canvas {
     canvas: HtmlCanvasElement,
@@ -205,6 +206,21 @@ impl Canvas {
                 }
                 let data = data.unwrap();
                 let _ = self.ctx.put_image_data(&data, ri.x as f64, ri.y as f64);
+            }
+            ImageType::Jpeg => {
+                let image = HtmlImageElement::new().unwrap();
+                let base64 = crate::utils::base64_encode(&ri.data);
+                image.set_src(&format!(
+                    "data:image/jpeg;base64,{}",
+                    std::str::from_utf8(&base64).unwrap()
+                ));
+                let _ = self.ctx.draw_image_with_html_image_element_and_dw_and_dh(
+                    &image,
+                    ri.x as f64,
+                    ri.y as f64,
+                    ri.width as f64,
+                    ri.height as f64,
+                );
             }
         }
     }

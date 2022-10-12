@@ -1,5 +1,5 @@
 use super::*;
-use super::{des, x11cursor::MouseUtils, x11keyboard, zlib, MouseEventType};
+use super::{decoder, des, x11cursor::MouseUtils, x11keyboard, MouseEventType};
 use crate::{console_log, log};
 
 const VNC_RFB33: &[u8; 12] = b"RFB 003.003\n";
@@ -31,6 +31,7 @@ pub enum VncEncoding {
     CopyRect = 1,
     RRE = 2,
     Hextile = 5,
+    Tight = 7,
     TRLE = 15,
     ZRLE = 16,
     CursorPseudo = -239,
@@ -84,7 +85,9 @@ pub struct Vnc {
     padding_rect: Option<VncRect>,
     outbuf: Vec<u8>,
     outs: Vec<VncOutput>,
-    zlib_decoder: zlib::Decoder,
+    raw: Option<decoder::RawDecoder>,
+    zrle: Option<decoder::ZrleDecoder>,
+    tight: Option<decoder::TightDecoder>,
 }
 
 impl Vnc {
@@ -92,6 +95,7 @@ impl Vnc {
         Self {
             state: VncState::Init,
             supported_encodings: vec![
+                VncEncoding::Tight,
                 VncEncoding::ZRLE,
                 VncEncoding::Raw,
                 VncEncoding::CopyRect,
@@ -115,11 +119,16 @@ impl Vnc {
             padding_rect: None,
             outbuf: Vec::with_capacity(128),
             outs: Vec::with_capacity(10),
-            zlib_decoder: zlib::Decoder::new(),
+            raw: None,
+            zrle: None,
+            tight: None,
         }
     }
 
     pub fn do_input(&mut self, input: Vec<u8>) {
+        if let VncState::Disconnected = self.state {
+            return;
+        }
         // console_log!(
         //     "VNC input {}, left {}, require {}",
         //     input.len(),
@@ -130,6 +139,9 @@ impl Vnc {
         while self.reader.remain() >= self.require {
             self.handle_input();
             // console_log!("left {}, require {}", self.reader.remain(), self.require);
+            if let VncState::Disconnected = self.state {
+                break;
+            }
         }
     }
 
@@ -231,46 +243,18 @@ impl Vnc {
 
 #[allow(dead_code)]
 impl Vnc {
-    fn read_u8(&mut self) -> u8 {
-        self.reader.read_u8()
-    }
-
-    fn read_u16(&mut self) -> u16 {
-        self.reader.read_u16()
-    }
-
-    fn read_u32(&mut self) -> u32 {
-        self.reader.read_u32()
-    }
-
-    fn read_u64(&mut self) -> u64 {
-        self.reader.read_u64()
-    }
-
-    fn read_exact_vec(&mut self, out_vec: &mut Vec<u8>, len: usize) {
-        self.reader.read_exact_vec(out_vec, len);
-    }
-
-    fn read_exact(&mut self, buf: &mut [u8], len: usize) {
-        self.reader.read_exact(buf, len)
-    }
-
-    fn read_string(&mut self, len: usize) -> String {
-        self.reader.read_string(len)
-    }
-
     fn read_string_l8(&mut self) -> String {
-        let len = self.read_u8() as usize;
+        let len = self.reader.read_u8() as usize;
         self.reader.read_string(len)
     }
 
     fn read_string_l16(&mut self) -> String {
-        let len = self.read_u16() as usize;
+        let len = self.reader.read_u16() as usize;
         self.reader.read_string(len)
     }
 
     fn read_string_l32(&mut self) -> String {
-        let len = self.read_u32() as usize;
+        let len = self.reader.read_u32() as usize;
         self.reader.read_string(len)
     }
 }
@@ -414,7 +398,7 @@ impl Vnc {
 
     fn do_handshake(&mut self) {
         let mut rfbversion: [u8; 12] = [0; 12];
-        self.read_exact(&mut rfbversion, 12);
+        self.reader.read_exact(&mut rfbversion, 12);
         let support_version = match &rfbversion {
             b"RFB 003.003\n" => Ok(VNC_RFB33),
             b"RFB 003.007\n" => Ok(VNC_RFB33),
@@ -435,7 +419,7 @@ impl Vnc {
     fn do_authenticate(&mut self) {
         // console_log!("VNC: do_authenticate {}", self.reader.remain());
         if self.security_type == SecurityType::Invalid {
-            let auth_type = self.read_u32();
+            let auth_type = self.reader.read_u32();
             match auth_type {
                 1 => {
                     self.security_type = SecurityType::None;
@@ -450,14 +434,14 @@ impl Vnc {
             }
         } else {
             let mut challenge = [0u8; 16];
-            self.read_exact(&mut challenge, 16);
+            self.reader.read_exact(&mut challenge, 16);
             self.challenge = challenge;
             self.outs.push(VncOutput::RequirePassword);
         }
     }
 
     fn handle_auth_result(&mut self) {
-        let response = self.read_u32();
+        let response = self.reader.read_u32();
         console_log!("Auth resp {}", response);
         match response {
             0 => self.send_client_initilize(),
@@ -476,10 +460,10 @@ impl Vnc {
     // 4            CARD32          name-length
     // name-length  CARD8           array name-string
     fn handle_server_init(&mut self) {
-        self.width = self.read_u16();
-        self.height = self.read_u16();
+        self.width = self.reader.read_u16();
+        self.height = self.reader.read_u16();
         let mut pfb: [u8; 16] = [0u8; 16];
-        self.read_exact(&mut pfb, 16);
+        self.reader.read_exact(&mut pfb, 16);
         // This pixel format will be used unless the client requests a different format using the SetPixelFormat message
         self.pf = (&pfb).into();
         console_log!(
@@ -501,7 +485,7 @@ impl Vnc {
             ServerMessage::ServerCutText => self.read_cut_text(),
             ServerMessage::FramebufferUpdate => self.read_rect(),
             ServerMessage::None => {
-                let msg_type = self.read_u8();
+                let msg_type = self.reader.read_u8();
 
                 match msg_type {
                     0 => self.handle_framebuffer_update(),
@@ -520,8 +504,8 @@ impl Vnc {
     // 2                CARD16              number-of-rectangles
     // This is followed by number-of-rectanglesrectangles of pixel data.
     fn handle_framebuffer_update(&mut self) {
-        let _padding = self.read_u8();
-        self.num_rect_left = self.read_u16();
+        let _padding = self.reader.read_u8();
+        self.num_rect_left = self.reader.read_u16();
         // console_log!("VNC: {} rects", self.num_rect_left);
         self.require = 12; // the length of the first rectangle hdr
         self.msg_handling = ServerMessage::FramebufferUpdate;
@@ -541,16 +525,17 @@ impl Vnc {
     fn read_rect(&mut self) {
         if self.padding_rect.is_none() {
             // a brand new rectangle
-            let x = self.read_u16();
-            let y = self.read_u16();
-            let width = self.read_u16();
-            let height = self.read_u16();
-            let encoding_type = self.read_u32().into();
+            let x = self.reader.read_u16();
+            let y = self.reader.read_u16();
+            let width = self.reader.read_u16();
+            let height = self.reader.read_u16();
+            let encoding_type = self.reader.read_u32().into();
             match encoding_type {
                 VncEncoding::Raw => self.handle_raw_encoding(x, y, width, height),
                 VncEncoding::CopyRect => self.handle_copy_rect_encoding(x, y, width, height),
                 VncEncoding::RRE => self.handle_rre_encoding(x, y, width, height),
                 VncEncoding::Hextile => self.handle_hextile_encoding(x, y, width, height),
+                VncEncoding::Tight => self.handle_tight_encoding(x, y, width, height),
                 VncEncoding::TRLE => self.handle_trle_encoding(x, y, width, height),
                 VncEncoding::ZRLE => self.handle_zrle_encoding(x, y, width, height),
                 VncEncoding::CursorPseudo => {
@@ -561,42 +546,36 @@ impl Vnc {
                 }
             }
         } else {
-            if let VncEncoding::ZRLE = self.padding_rect.as_ref().unwrap().encoding_type {
-                if self.require == 4 {
-                    self.require = self.read_u32() as usize;
-                    return;
-                }
-            }
-            // we now have an entire rectangle
-            let rect = self.padding_rect.take().unwrap();
-            let mut image_data: Vec<u8> = Vec::with_capacity(self.require);
-            self.read_exact_vec(&mut image_data, self.require);
+            let rect = self.padding_rect.as_ref().unwrap();
             match rect.encoding_type {
                 VncEncoding::Raw => {
                     // raw
-                    let mut y = 0;
-                    let mut x = 0;
+                    let mut decoder = if self.raw.is_none() {
+                        decoder::RawDecoder::new()
+                    } else {
+                        self.raw.take().unwrap()
+                    };
 
-                    while y < rect.height {
-                        while x < rect.width {
-                            let idx = (y as usize * rect.width as usize + x as usize) * 4;
-                            image_data.swap(idx, idx + 2);
-                            x += 1;
+                    match decoder.decode(&self.pf, rect, &mut self.reader, &mut self.require) {
+                        Ok(images) => {
+                            if let Some(images) = images {
+                                for i in images {
+                                    self.outs.push(VncOutput::RenderImage(i));
+                                }
+                                self.read_rect_end();
+                            }
                         }
-                        x = 0;
-                        y += 1;
+                        Err(e) => {
+                            self.disconnect_with_err(&format!("{:?}", e));
+                        }
                     }
-                    self.outs.push(VncOutput::RenderImage(ImageData {
-                        type_: ImageType::Raw,
-                        x: rect.x,
-                        y: rect.y,
-                        width: rect.width,
-                        height: rect.height,
-                        data: image_data,
-                    }));
+
+                    self.raw = Some(decoder);
                 }
                 VncEncoding::CopyRect => {
                     // copy rectangle
+                    let mut image_data: Vec<u8> = Vec::with_capacity(self.require);
+                    self.reader.read_exact_vec(&mut image_data, self.require);
                     self.outs.push(VncOutput::RenderImage(ImageData {
                         type_: ImageType::Copy,
                         x: rect.x,
@@ -605,29 +584,69 @@ impl Vnc {
                         height: rect.height,
                         data: image_data,
                     }));
+                    self.read_rect_end();
                 }
-                VncEncoding::ZRLE => {
-                    // ZRLE
-                    match self.zlib_decoder.decode(&self.pf, &rect, &image_data) {
+                VncEncoding::Tight => {
+                    // Tight
+                    let mut decoder = if self.tight.is_none() {
+                        decoder::TightDecoder::new()
+                    } else {
+                        self.tight.take().unwrap()
+                    };
+
+                    match decoder.decode(&self.pf, rect, &mut self.reader, &mut self.require) {
                         Ok(images) => {
-                            for i in images {
-                                self.outs.push(VncOutput::RenderImage(i));
+                            if let Some(images) = images {
+                                for i in images {
+                                    self.outs.push(VncOutput::RenderImage(i));
+                                }
+                                self.read_rect_end();
                             }
                         }
                         Err(e) => {
                             self.disconnect_with_err(&format!("{:?}", e));
                         }
                     }
+
+                    self.tight = Some(decoder);
+                }
+                VncEncoding::ZRLE => {
+                    // ZRLE
+                    let mut decoder = if self.zrle.is_none() {
+                        decoder::ZrleDecoder::new()
+                    } else {
+                        self.zrle.take().unwrap()
+                    };
+
+                    match decoder.decode(&self.pf, rect, &mut self.reader, &mut self.require) {
+                        Ok(images) => {
+                            if let Some(images) = images {
+                                for i in images {
+                                    self.outs.push(VncOutput::RenderImage(i));
+                                }
+                                self.read_rect_end();
+                            }
+                        }
+                        Err(e) => {
+                            self.disconnect_with_err(&format!("{:?}", e));
+                        }
+                    }
+
+                    self.zrle = Some(decoder);
                 }
                 _ => unimplemented!("Unknow encoding {}", rect.encoding_type as u32),
             }
-            self.num_rect_left -= 1;
-            if 0 == self.num_rect_left {
-                self.msg_handling = ServerMessage::None;
-                self.require = 1; // any message from sever will be handled
-            } else {
-                self.require = 12; // the length of the next rectangle hdr
-            }
+        }
+    }
+
+    fn read_rect_end(&mut self) {
+        self.padding_rect.take();
+        self.num_rect_left -= 1;
+        if 0 == self.num_rect_left {
+            self.msg_handling = ServerMessage::None;
+            self.require = 1; // any message from sever will be handled
+        } else {
+            self.require = 12; // the length of the next rectangle hdr
         }
     }
 
@@ -644,9 +663,9 @@ impl Vnc {
     // 2                CARD16              first-colour
     // 2                CARD16              number-of-colours
     fn handle_set_colour_map(&mut self) {
-        let _padding = self.read_u8();
-        let _first_colour = self.read_u16();
-        self.require = self.read_u16() as usize * 6;
+        let _padding = self.reader.read_u8();
+        let _first_colour = self.reader.read_u16();
+        self.require = self.reader.read_u16() as usize * 6;
         self.msg_handling = ServerMessage::SetColourMap;
     }
 
@@ -664,7 +683,7 @@ impl Vnc {
 
         // just consume the data
         let mut v = Vec::with_capacity(self.require);
-        self.read_exact_vec(&mut v, self.require);
+        self.reader.read_exact_vec(&mut v, self.require);
         self.require = 1;
         self.msg_handling = ServerMessage::None;
     }
@@ -684,15 +703,15 @@ impl Vnc {
     //      length          CARD8               array text
     fn handle_server_cut_text(&mut self) {
         for _ in 0..3 {
-            self.read_u8();
+            self.reader.read_u8();
         }
-        self.require = self.read_u32() as usize;
+        self.require = self.reader.read_u32() as usize;
         self.msg_handling = ServerMessage::ServerCutText;
         console_log!("VNC: ServerCutText {} bytes", self.require);
     }
 
     fn read_cut_text(&mut self) {
-        let text = self.read_string(self.require);
+        let text = self.reader.read_string(self.require);
         self.require = 1;
         self.msg_handling = ServerMessage::None;
         self.outs.push(VncOutput::SetClipboard(text));
@@ -732,6 +751,17 @@ impl Vnc {
         // Note: Hextile encoding is obsolescent.  In general, ZRLE and TRLE
         // encodings are more compact.
         unimplemented!()
+    }
+
+    fn handle_tight_encoding(&mut self, x: u16, y: u16, width: u16, height: u16) {
+        self.require = 1;
+        self.padding_rect = Some(VncRect {
+            x,
+            y,
+            width,
+            height,
+            encoding_type: VncEncoding::Tight,
+        })
     }
 
     fn handle_trle_encoding(&mut self, _x: u16, _y: u16, _width: u16, _height: u16) {
