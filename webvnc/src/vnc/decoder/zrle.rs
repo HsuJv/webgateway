@@ -26,58 +26,11 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
 
-use super::vnc_impl::*;
-use super::{ImageData, ImageType};
+use super::super::vnc_impl::*;
+use super::super::{ImageData, ImageType, StreamReader};
+use super::zlib::ZlibReader;
 use byteorder::ReadBytesExt;
 use std::io::{Read, Result};
-
-struct ZlibReader<'a> {
-    decompressor: flate2::Decompress,
-    input: &'a [u8],
-}
-
-impl<'a> ZlibReader<'a> {
-    fn new(decompressor: flate2::Decompress, input: &'a [u8]) -> ZlibReader<'a> {
-        ZlibReader {
-            decompressor,
-            input,
-        }
-    }
-
-    fn into_inner(self) -> Result<flate2::Decompress> {
-        if self.input.is_empty() {
-            Ok(self.decompressor)
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "leftover ZRLE byte data",
-            ))
-        }
-    }
-}
-
-impl<'a> Read for ZlibReader<'a> {
-    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
-        let in_before = self.decompressor.total_in();
-        let out_before = self.decompressor.total_out();
-        let result =
-            self.decompressor
-                .decompress(self.input, output, flate2::FlushDecompress::None);
-        let consumed = (self.decompressor.total_in() - in_before) as usize;
-        let produced = (self.decompressor.total_out() - out_before) as usize;
-
-        self.input = &self.input[consumed..];
-        match result {
-            Ok(flate2::Status::Ok) => Ok(produced),
-            Ok(flate2::Status::BufError) => Ok(0),
-            Err(error) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
-            Ok(flate2::Status::StreamEnd) => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "ZRLE stream end",
-            )),
-        }
-    }
-}
 
 struct BitReader<T: Read> {
     reader: T,
@@ -150,6 +103,7 @@ impl<T: Read> Read for BitReader<T> {
 }
 
 pub struct Decoder {
+    padding_len: u32,
     decompressor: Option<flate2::Decompress>,
 }
 
@@ -157,6 +111,7 @@ impl Decoder {
     pub fn new() -> Decoder {
         Decoder {
             decompressor: Some(flate2::Decompress::new(/*zlib_header*/ true)),
+            padding_len: 0,
         }
     }
 
@@ -164,8 +119,9 @@ impl Decoder {
         &mut self,
         format: &PixelFormat,
         rect: &VncRect,
-        input: &[u8],
-    ) -> Result<Vec<ImageData>> {
+        input: &mut StreamReader,
+        out_wait: &mut usize,
+    ) -> Result<Option<Vec<ImageData>>> {
         fn read_run_length(reader: &mut dyn Read) -> Result<usize> {
             let mut run_length_part;
             let mut run_length = 1;
@@ -198,7 +154,23 @@ impl Decoder {
             pixels.extend_from_slice(&palette[start..start + bpp])
         }
 
+        if self.padding_len == 0 {
+            if input.remain < 4 {
+                *out_wait = 4;
+                return Ok(None);
+            } else {
+                self.padding_len = input.read_u32();
+            }
+        }
+
+        if input.remain < self.padding_len as usize {
+            *out_wait = self.padding_len as usize;
+            return Ok(None);
+        }
+
         let mut ret = Vec::new();
+        let mut image_data = Vec::with_capacity(self.padding_len as usize);
+        input.read_exact_vec(&mut image_data, self.padding_len as usize);
 
         let bpp = format.bits_per_pixel as usize / 8;
         let pixel_mask = (format.red_max as u32) << format.red_shift
@@ -219,7 +191,10 @@ impl Decoder {
             };
 
         let mut palette = Vec::with_capacity(128 * bpp);
-        let mut reader = BitReader::new(ZlibReader::new(self.decompressor.take().unwrap(), input));
+        let mut reader = BitReader::new(ZlibReader::new(
+            self.decompressor.take().unwrap(),
+            &image_data,
+        ));
 
         let mut y = 0;
         while y < rect.height {
@@ -338,6 +313,7 @@ impl Decoder {
         }
 
         self.decompressor = Some(reader.into_inner()?.into_inner()?);
-        Ok(ret)
+        self.padding_len = 0;
+        Ok(Some(ret))
     }
 }

@@ -1,8 +1,8 @@
+mod decoder;
 mod des;
 mod vnc_impl;
 mod x11cursor;
 mod x11keyboard;
-mod zlib;
 
 pub enum MouseEventType {
     Down,
@@ -26,6 +26,7 @@ pub enum ImageType {
     Raw,
     Copy,
     Fill,
+    Jpeg,
 }
 
 pub enum VncOutput {

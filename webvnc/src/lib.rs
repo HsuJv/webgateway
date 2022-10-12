@@ -114,6 +114,7 @@ fn vnc_out_handler(ws: &WebSocket, vnc: &Vnc, canvas: &CanvasUtils) {
 }
 
 fn vnc_close_handle(vnc: &Vnc, canvas: &CanvasUtils, msg: &str) {
+    console_log!("Websocket disconnect with message {}", msg);
     vnc.close();
     unsafe {
         REFRESHER.take();

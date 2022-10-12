@@ -17,8 +17,9 @@
 ## Milestones
 
 * VNC Clients:
-    - Raw encoding support (Done)
-    - ZRLE encoding support (Done) (Default)
+    - Raw encoding support
+    - Tight encoding support (Default)
+    - ZRLE encoding support
     - Other encoding support (WIP)
 
 * SSH Clients:
