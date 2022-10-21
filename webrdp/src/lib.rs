@@ -1,9 +1,9 @@
 mod canvas;
-mod rdp;
+mod rdp_client;
 mod utils;
 
 use canvas::CanvasUtils;
-use rdp::Rdp;
+use rdp_client::Rdp;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{ErrorEvent, HtmlButtonElement, MessageEvent, WebSocket};
@@ -42,33 +42,33 @@ fn rdp_out_handler(ws: &WebSocket, rdp: &Rdp, canvas: &CanvasUtils) {
     if let Some(out) = out {
         for ref o in out {
             match o {
-                rdp::RdpOutput::Err(err) => {
+                rdp_client::RdpOutput::Err(err) => {
                     console_log!("Err {}", err);
                     rdp_close_handle(rdp, canvas, err);
                 }
-                rdp::RdpOutput::WsBuf(buf) => match ws.send_with_u8_array(buf) {
+                rdp_client::RdpOutput::WsBuf(buf) => match ws.send_with_u8_array(buf) {
                     Ok(_) => {}
                     Err(err) => {
                         let err = format!("error sending message: {:?}", err);
                         rdp_close_handle(rdp, canvas, &err);
                     }
                 },
-                rdp::RdpOutput::RequireSSL => match ws.send_with_str("SSL") {
+                rdp_client::RdpOutput::RequireSSL => match ws.send_with_str("SSL") {
                     Ok(_) => {}
                     Err(err) => {
                         let err = format!("error launching ssl: {:?}", err);
                         rdp_close_handle(rdp, canvas, &err);
                     }
                 },
-                rdp::RdpOutput::RequirePassword => {
+                rdp_client::RdpOutput::RequirePassword => {
                     // let pwd = prompt("Please input the password");
                     // rdp.set_credential(&pwd);
                     // rdp_out_handler(ws, rdp, canvas);
                 }
-                rdp::RdpOutput::RenderImage(ri) => {
+                rdp_client::RdpOutput::RenderImage(ri) => {
                     canvas.draw(ri);
                 }
-                rdp::RdpOutput::SetResolution(x, y) => {
+                rdp_client::RdpOutput::SetResolution(x, y) => {
                     canvas.init(*x as u32, *y as u32);
                     canvas.bind(rdp);
                     // rdp.require_frame(0);
@@ -90,7 +90,7 @@ fn rdp_out_handler(ws: &WebSocket, rdp: &Rdp, canvas: &CanvasUtils) {
                     //     REFRESHER = Some(refersher);
                     // }
                 }
-                rdp::RdpOutput::SetClipboard(text) => {
+                rdp_client::RdpOutput::SetClipboard(text) => {
                     setClipBoard(text.to_owned());
                     // ConsoleService::log(&self.error_msg);
                 }

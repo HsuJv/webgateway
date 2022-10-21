@@ -5,7 +5,7 @@
 
 use super::rc4::Rc4;
 use super::*;
-use crate::rdp::StreamWriter;
+use crate::rdp_client::StreamWriter;
 use hmac::{Hmac, Mac};
 #[cfg(not(test))]
 use js_sys::Math::random;

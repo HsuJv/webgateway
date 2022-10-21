@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     console_log, log,
-    rdp::{ImageData, ImageType, MouseEventType, Rdp},
+    rdp_client::{ImageData, ImageType, MouseEventType, Rdp},
 };
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};

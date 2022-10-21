@@ -2,7 +2,7 @@
 
 use super::ntlm::*;
 use super::{super::ber::*, to_unicode};
-use crate::rdp::rdp_impl::{ConnectCb, FailCb, RdpInitializer, RdpInner};
+use crate::rdp_client::rdp_impl::{ConnectCb, FailCb, RdpInitializer, RdpInner};
 use x509_parser::prelude::*;
 
 enum State {

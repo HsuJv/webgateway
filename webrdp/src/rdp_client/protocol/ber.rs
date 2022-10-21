@@ -3,7 +3,7 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
-use crate::rdp::StreamWriter;
+use crate::rdp_client::StreamWriter;
 
 /* Class - bits 8 and 7 */
 const BER_CLASS_UNIV: u8 = 0x00;
