@@ -132,7 +132,7 @@ fn vnc_close_handle(vnc: &Vnc, canvas: &CanvasUtils, msg: &str) {
 fn start_websocket() -> Result<(), JsValue> {
     // connect
     let url = format!(
-        "{scheme}://{host}/websockify",
+        "{scheme}://{host}/ws?bookmark=12vnc",
         scheme = if web_sys::window()
             .unwrap()
             .location()
@@ -143,7 +143,7 @@ fn start_websocket() -> Result<(), JsValue> {
         } else {
             "ws"
         },
-        host = web_sys::window().unwrap().location().host()?
+        host = "10.103.14.110:4433"
     );
     let ws = WebSocket::new_with_str(&url, "binary")?;
     let canvas = CanvasUtils::new();

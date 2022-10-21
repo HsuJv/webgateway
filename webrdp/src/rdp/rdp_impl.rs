@@ -3,17 +3,27 @@ use crate::{console_log, log};
 use super::protocol::*;
 use super::*;
 
+pub type ConnectCb = fn(&mut RdpInner);
+pub type FailCb = fn(&mut RdpInner, &str);
+
+pub trait RdpInitializer {
+    fn hello(&mut self, rdp: &mut RdpInner);
+    fn do_input(&mut self, rdp: &mut RdpInner);
+}
+
 #[derive(Debug)]
 enum State {
     Init,
     X224,
     Nla,
+    Core,
     Disconnected,
 }
 
 pub struct RdpInner {
     state: State,
-    engine: Option<Box<dyn super::Engine>>,
+    initializer: Option<Box<dyn RdpInitializer>>,
+    // core: Box<dyn super::RdpInitializer>,
     pub reader: StreamReader,
     pub writer: StreamWriter,
     outs: Vec<RdpOutput>,
@@ -25,7 +35,8 @@ impl RdpInner {
     pub fn new() -> Self {
         RdpInner {
             state: State::Init,
-            engine: None,
+            initializer: None,
+            // core: None,
             reader: StreamReader::new(Vec::with_capacity(10), 0),
             writer: StreamWriter::new(Vec::with_capacity(1024)),
             outs: Vec::with_capacity(10),
@@ -35,7 +46,7 @@ impl RdpInner {
     }
 
     pub fn init(&mut self) {
-        if self.engine.is_some() {
+        if self.initializer.is_some() {
             panic!("inited");
         }
         self.move_next();
@@ -47,16 +58,26 @@ impl RdpInner {
         };
         self.reader.append(buf);
         while self.reader.remain() >= self.require {
-            let mut handler = self.engine.take().unwrap();
+            match self.state {
+                State::Disconnected => {
+                    unimplemented!("TO DO, clean up")
+                }
+                State::Core => {
+                    unimplemented!("TO DO")
+                }
+                _ => {
+                    let mut handler = self.initializer.take().unwrap();
 
-            handler.do_input(self);
-            if self.engine.is_none() {
-                self.engine = Some(handler);
-            }
+                    handler.do_input(self);
+                    if self.initializer.is_none() {
+                        self.initializer = Some(handler);
+                    }
 
-            // console_log!("left {}, require {}", self.reader.remain(), self.require);
-            if let State::Disconnected = self.state {
-                break;
+                    // console_log!("left {}, require {}", self.reader.remain(), self.require);
+                    if let State::Disconnected = self.state {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -78,6 +99,13 @@ impl RdpInner {
         }
     }
 
+    pub fn flush(&mut self) {
+        if !self.writer.buf.is_empty() {
+            self.outs.push(RdpOutput::WsBuf(self.writer.buf.clone()));
+            self.writer.buf.clear();
+        }
+    }
+
     pub fn close(&mut self) {
         self.state = State::Disconnected;
     }
@@ -90,7 +118,7 @@ impl RdpInner {
             State::Init => {
                 let mut x224 = x224::X224::new(Self::move_next, Self::disconnect_with_err);
                 x224.hello(self);
-                self.engine = Some(Box::new(x224));
+                self.initializer = Some(Box::new(x224));
                 self.state = State::X224;
             }
             State::X224 => {
@@ -105,14 +133,18 @@ impl RdpInner {
                         "webrdp",
                     );
                     nla.hello(self);
-                    self.engine = Some(Box::new(nla));
+                    self.initializer = Some(Box::new(nla));
                     self.state = State::Nla;
                 } else {
-                    unimplemented!("Only nla is supported now");
+                    self.state = State::Core;
                 }
             }
-            State::Nla => {}
-            State::Disconnected => {}
+            State::Nla => {
+                self.flush();
+                self.state = State::Core;
+            }
+            State::Core => unreachable!(),
+            State::Disconnected => unreachable!(),
         }
     }
 

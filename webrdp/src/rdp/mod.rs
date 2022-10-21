@@ -6,13 +6,6 @@ mod x11keyboard;
 use rdp_impl::RdpInner;
 use std::{rc::Rc, sync::Mutex};
 
-type ConnectCb = fn(&mut RdpInner);
-type FailCb = fn(&mut RdpInner, &str);
-pub trait Engine {
-    fn hello(&mut self, rdp: &mut RdpInner);
-    fn do_input(&mut self, rdp: &mut RdpInner);
-}
-
 pub enum MouseEventType {
     Down,
     Up,
@@ -160,6 +153,12 @@ impl StreamReader {
                 self.inner.remove(0);
             }
         }
+    }
+
+    pub fn read_to_end(&mut self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.remain);
+        self.read_exact_vec(&mut out, self.remain);
+        out
     }
 
     pub fn read_u8(&mut self) -> u8 {

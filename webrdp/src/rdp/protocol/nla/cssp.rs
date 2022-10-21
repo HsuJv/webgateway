@@ -2,8 +2,7 @@
 
 use super::ntlm::*;
 use super::{super::ber::*, to_unicode};
-use crate::rdp::rdp_impl::RdpInner;
-use crate::rdp::*;
+use crate::rdp::rdp_impl::{ConnectCb, FailCb, RdpInitializer, RdpInner};
 use x509_parser::prelude::*;
 
 enum State {
@@ -46,7 +45,7 @@ impl CsspClient {
     }
 }
 
-impl Engine for CsspClient {
+impl RdpInitializer for CsspClient {
     fn hello(&mut self, rdp: &mut RdpInner) {
         self.state = State::ServerPubkeyWait;
         self.ntlm
@@ -59,16 +58,14 @@ impl Engine for CsspClient {
             State::ServerPubkeyWait => self.handle_server_publickey(rdp),
             State::ClientNegoSent => self.handle_server_challenge(rdp),
             State::ClientChalSent => self.handle_server_auth(rdp),
-            State::ServerAuthRecv => unimplemented!(),
+            State::ServerAuthRecv => unreachable!(),
         }
     }
 }
 
 impl CsspClient {
     fn handle_server_publickey(&mut self, rdp: &mut RdpInner) {
-        let mut x509_der = Vec::new();
-        rdp.reader
-            .read_exact_vec(&mut x509_der, rdp.reader.remain());
+        let x509_der = rdp.reader.read_to_end();
         let x509 = X509Certificate::from_der(&x509_der).unwrap();
         self.server_key = x509
             .1
@@ -85,9 +82,7 @@ impl CsspClient {
     }
 
     fn handle_server_challenge(&mut self, rdp: &mut RdpInner) {
-        let mut server_challenge = Vec::with_capacity(rdp.reader.remain());
-        rdp.reader
-            .read_exact_vec(&mut server_challenge, rdp.reader.remain());
+        let server_challenge = rdp.reader.read_to_end();
         let ans1_tree = BerObj::from_der(&server_challenge);
         // console_log!("ans1_tree {:#?}", ans1_tree);
         if let ASN1Type::SequenceOwned(ref seq) = ans1_tree.get_value() {
@@ -98,22 +93,28 @@ impl CsspClient {
                             if let ASN1Type::OctetString(server_chal) = nego_item.get_value() {
                                 self.ntlm.generate_client_chal(server_chal);
                             } else {
-                                panic!("Unknown response");
+                                (self.on_fail)(rdp, "Wrong nla response");
+                                return;
                             }
                         } else {
-                            panic!("Unknown response");
+                            (self.on_fail)(rdp, "Wrong nla response");
+                            return;
                         }
                     } else {
-                        panic!("Unknown response");
+                        (self.on_fail)(rdp, "Wrong nla response");
+                        return;
                     }
                 } else {
-                    panic!("Unknown response");
+                    (self.on_fail)(rdp, "Wrong nla response");
+                    return;
                 }
             } else {
-                panic!("Unknown response");
+                (self.on_fail)(rdp, "Wrong nla response");
+                return;
             }
         } else {
-            panic!("Unknown response");
+            (self.on_fail)(rdp, "Wrong nla response");
+            return;
         }
         let pubkey_auth = self.ntlm.encrypt(&self.server_key, self.send_seq);
         self.send_seq += 1;
@@ -123,9 +124,7 @@ impl CsspClient {
     }
 
     fn handle_server_auth(&mut self, rdp: &mut RdpInner) {
-        let mut not_in_use = Vec::new();
-        rdp.reader
-            .read_exact_vec(&mut not_in_use, rdp.reader.remain());
+        let _ = rdp.reader.read_to_end();
 
         let auth_data = ber_seq!(
             /* [0] credType (INTEGER) */
@@ -148,6 +147,8 @@ impl CsspClient {
         let auth = self.ntlm.encrypt(&auth_data, self.send_seq);
         self.send_seq += 1;
         self.send_ts_auth(rdp, &auth);
+        self.state = State::ServerAuthRecv;
+        (self.on_connect)(rdp)
     }
 
     fn send_tsrequest(&self, rdp: &mut RdpInner, nego: &[u8]) {

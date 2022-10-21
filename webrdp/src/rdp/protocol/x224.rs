@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use super::super::rdp_impl::RdpInner;
-use super::super::*;
+use super::super::rdp_impl::{RdpInitializer, RdpInner, ConnectCb, FailCb};
 
 const RDP_X224_VER: u8 = 3;
 const RDP_X224_LEN: u8 = 0x13;
@@ -49,7 +48,7 @@ impl X224 {
     }
 }
 
-impl Engine for X224 {
+impl RdpInitializer for X224 {
     fn hello(&mut self, rdp: &mut RdpInner) {
         // send X.224 request
         // Client X.224 Connection Request PDU
