@@ -13,11 +13,21 @@ default = ["console_error_panic_hook"]
 [dependencies]
 wasm-bindgen = "0.2.63"
 js-sys = "0.3"
-untrusted = "0.9"
-md4 = "0.10.2"
-hmac = "0.12.1"
-md-5 = "0.10.5"
 x509-parser = "0.14.0"
+rdp-rs = { path = "./rdp-rs", default-features = false }
+ws_stream_wasm = { version = "^0.7", features = ["tokio_io"] }
+async_io_stream = { version = "^0.3", features = ["tokio_io"] }
+pharos = "0.5.3"
+wasm-bindgen-futures = "0.4.33"
+futures = "0.3.25"
+async-trait = "0.1.58"
+tokio = { version = "^1", features = [ 
+    "sync",
+    "macros",
+    "io-util",
+    "rt",
+    "time"
+    ]}
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires
