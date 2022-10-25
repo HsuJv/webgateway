@@ -1,21 +1,22 @@
+use crate::input::{InputEvent, KeyEventType, MouseEventType};
+use rdp::core::event::BitmapEvent;
 use std::rc::Rc;
-
-use crate::{
-    console_log, log,
-    rdp_client::{ImageData, ImageType, MouseEventType, Rdp},
-};
+use tokio::sync::mpsc;
+use tracing::warn;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{
     CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
 };
+
 struct Canvas {
     canvas: HtmlCanvasElement,
     ctx: CanvasRenderingContext2d,
+    output: mpsc::Sender<InputEvent>,
 }
 
 impl Canvas {
-    fn new() -> Self {
+    fn new(sender: mpsc::Sender<InputEvent>) -> Self {
         let document = web_sys::window().unwrap().document().unwrap();
         let canvas = document.get_element_by_id("rdp-canvas").unwrap();
         let canvas: HtmlCanvasElement = canvas
@@ -28,7 +29,11 @@ impl Canvas {
             .unwrap()
             .dyn_into::<CanvasRenderingContext2d>()
             .unwrap();
-        Self { canvas, ctx }
+        Self {
+            canvas,
+            ctx,
+            output: sender,
+        }
     }
 
     fn set_resolution(&self, width: u32, height: u32) {
@@ -39,12 +44,17 @@ impl Canvas {
         self.ctx.fill();
     }
 
-    fn bind(&self, rdp: &Rdp) {
-        let handler = rdp.clone();
+    fn bind(&self) {
+        let sender = self.output.clone();
         let key_down = move |e: KeyboardEvent| {
+            let sender = sender.clone();
             e.prevent_default();
             e.stop_propagation();
-            handler.key_press(e, true);
+            futures::executor::block_on(async move {
+                let _ = sender
+                    .send(InputEvent::Keyboard(e, KeyEventType::Down))
+                    .await;
+            });
         };
 
         let handler = Box::new(key_down) as Box<dyn FnMut(_)>;
@@ -56,11 +66,14 @@ impl Canvas {
             .unwrap();
         cb.forget();
 
-        let handler = rdp.clone();
+        let sender = self.output.clone();
         let key_up = move |e: KeyboardEvent| {
+            let sender = sender.clone();
             e.prevent_default();
             e.stop_propagation();
-            handler.key_press(e, false);
+            futures::executor::block_on(async move {
+                let _ = sender.send(InputEvent::Keyboard(e, KeyEventType::Up)).await;
+            });
         };
 
         let handler = Box::new(key_up) as Box<dyn FnMut(_)>;
@@ -72,7 +85,7 @@ impl Canvas {
             .unwrap();
         cb.forget();
 
-        let handler = rdp.clone();
+        let sender = self.output.clone();
         let ctrl_alt_del_btn = web_sys::window()
             .unwrap()
             .document()
@@ -83,7 +96,45 @@ impl Canvas {
             .map_err(|_| ())
             .unwrap();
         let ctrl_alt_del = move || {
-            handler.ctrl_alt_del();
+            let sender = sender.clone();
+            futures::executor::block_on(async move {
+                let _ = sender
+                    .send(InputEvent::KeyCode(
+                        0x001D, /* Control Left */
+                        KeyEventType::Down,
+                    ))
+                    .await;
+                let _ = sender
+                    .send(InputEvent::KeyCode(
+                        0x0038, /* Alt Left */
+                        KeyEventType::Down,
+                    ))
+                    .await;
+                let _ = sender
+                    .send(InputEvent::KeyCode(
+                        0xE053, /* Delete */
+                        KeyEventType::Down,
+                    ))
+                    .await;
+                let _ = sender
+                    .send(InputEvent::KeyCode(
+                        0xE053, /* Delete */
+                        KeyEventType::Up,
+                    ))
+                    .await;
+                let _ = sender
+                    .send(InputEvent::KeyCode(
+                        0x0038, /* Alt Left */
+                        KeyEventType::Up,
+                    ))
+                    .await;
+                let _ = sender
+                    .send(InputEvent::KeyCode(
+                        0x001D, /* Control Left */
+                        KeyEventType::Up,
+                    ))
+                    .await;
+            });
         };
         let handler = Box::new(ctrl_alt_del) as Box<dyn FnMut()>;
 
@@ -100,10 +151,16 @@ impl Canvas {
 
         // to do:
         // calculate relation position
-        let handler = rdp.clone();
+        let sender = self.output.clone();
         let mouse_move = move |e: MouseEvent| {
+            let sender = sender.clone();
+            e.prevent_default();
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::Move);
+            futures::executor::block_on(async move {
+                let _ = sender
+                    .send(InputEvent::Mouse(e, MouseEventType::Move))
+                    .await;
+            });
         };
 
         let handler = Box::new(mouse_move) as Box<dyn FnMut(_)>;
@@ -115,10 +172,16 @@ impl Canvas {
             .unwrap();
         cb.forget();
 
-        let handler = rdp.clone();
+        let sender = self.output.clone();
         let mouse_down = move |e: MouseEvent| {
+            let sender = sender.clone();
+            // e.prevent_default();
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::Down);
+            futures::executor::block_on(async move {
+                let _ = sender
+                    .send(InputEvent::Mouse(e, MouseEventType::Down))
+                    .await;
+            });
         };
 
         let handler = Box::new(mouse_down) as Box<dyn FnMut(_)>;
@@ -130,10 +193,14 @@ impl Canvas {
             .unwrap();
         cb.forget();
 
-        let handler = rdp.clone();
+        let sender = self.output.clone();
         let mouse_up = move |e: MouseEvent| {
+            let sender = sender.clone();
+            e.prevent_default();
             e.stop_propagation();
-            handler.mouse_event(e, MouseEventType::Up);
+            futures::executor::block_on(async move {
+                let _ = sender.send(InputEvent::Mouse(e, MouseEventType::Up)).await;
+            });
         };
 
         let handler = Box::new(mouse_up) as Box<dyn FnMut(_)>;
@@ -160,53 +227,53 @@ impl Canvas {
         cb.forget();
     }
 
-    fn draw(&self, ri: &ImageData) {
-        match ri.type_ {
-            ImageType::Copy => {
-                //copy
-                let sx = (ri.data[0] as u16) << 8 | ri.data[1] as u16;
-                let sy = (ri.data[2] as u16) << 8 | ri.data[3] as u16;
+    fn draw(&self, bm: BitmapEvent) {
+        let bitmap_dest_left = bm.dest_left as u32;
+        let _bitmap_dest_right = bm.dest_right as u32;
+        let _bitmap_dest_bottom = bm.dest_bottom as u32;
+        let bitmap_dest_top = bm.dest_top as u32;
+        let bitmap_width = bm.width as u32;
+        let bitmap_height = bm.height as u32;
 
-                let _ = self
-                    .ctx
-                    .draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-                        &self.canvas,
-                        sx as f64,
-                        sy as f64,
-                        ri.width as f64,
-                        ri.height as f64,
-                        ri.x as f64,
-                        ri.y as f64,
-                        ri.width as f64,
-                        ri.height as f64,
-                    );
+        let mut data = bm.decompress().unwrap();
+        let mut y = 0;
+        let mut x = 0;
+
+        while y < bitmap_height {
+            while x < bitmap_width {
+                let idx = (y as usize * bitmap_width as usize + x as usize) * 4;
+                data.swap(idx, idx + 2);
+                data[idx + 3] = 255;
+                x += 1;
             }
-            ImageType::Fill => {
-                // fill
-                let (r, g, b) = (ri.data[2], ri.data[1], ri.data[0]);
-                let style = format!("rgb({},{},{})", r, g, b);
-                self.ctx.set_fill_style(&JsValue::from_str(&style));
-            }
-            ImageType::Raw => {
-                let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
-                    Clamped(&ri.data),
-                    ri.width as u32,
-                    ri.height as u32,
-                );
-                if data.is_err() {
-                    console_log!(
-                        "renderring failed at ({}, {}), width {}, height {}, len {}",
-                        ri.x,
-                        ri.y,
-                        ri.width,
-                        ri.height,
-                        ri.data.len(),
-                    );
-                }
-                let data = data.unwrap();
-                let _ = self.ctx.put_image_data(&data, ri.x as f64, ri.y as f64);
-            }
+            x = 0;
+            y += 1;
         }
+
+        let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+            Clamped(&data),
+            bitmap_width as u32,
+            bitmap_height as u32,
+        );
+        if data.is_err() {
+            warn!(
+                "renderring failed at ({}, {}), width {}, height {}",
+                bitmap_dest_left, bitmap_dest_top, bitmap_width, bitmap_height,
+            );
+        } else {
+            //
+            // trace!(
+            //     "draw x:{}-{}, y:{}-{}",
+            //     bitmap_dest_left,
+            //     bitmap_dest_right,
+            //     bitmap_dest_top,
+            //     bitmap_dest_bottom
+            // );
+        }
+        let data = data.unwrap();
+        let _ = self
+            .ctx
+            .put_image_data(&data, bitmap_dest_left as f64, bitmap_dest_top as f64);
     }
 
     fn close(&self) {
@@ -227,22 +294,19 @@ impl Clone for CanvasUtils {
 }
 
 impl CanvasUtils {
-    pub fn new() -> Self {
+    pub fn new(sender: mpsc::Sender<InputEvent>) -> Self {
         Self {
-            inner: Rc::new(Canvas::new()),
+            inner: Rc::new(Canvas::new(sender)),
         }
     }
 
     pub fn init(&self, width: u32, height: u32) {
         self.inner.as_ref().set_resolution(width, height);
+        self.inner.as_ref().bind();
     }
 
-    pub fn bind(&self, rdp: &Rdp) {
-        self.inner.as_ref().bind(rdp);
-    }
-
-    pub fn draw(&self, ri: &ImageData) {
-        self.inner.as_ref().draw(ri);
+    pub fn draw(&self, bm: BitmapEvent) {
+        self.inner.as_ref().draw(bm);
     }
 
     pub fn close(&self) {

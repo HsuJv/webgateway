@@ -15,12 +15,14 @@ wasm-bindgen = "0.2.63"
 js-sys = "0.3"
 x509-parser = "0.14.0"
 rdp-rs = { path = "./rdp-rs", default-features = false }
+
+# websocket
 ws_stream_wasm = { version = "^0.7", features = ["tokio_io"] }
 async_io_stream = { version = "^0.3", features = ["tokio_io"] }
-pharos = "0.5.3"
+
+# async
 wasm-bindgen-futures = "0.4.33"
 futures = "0.3.25"
-async-trait = "0.1.58"
 tokio = { version = "^1", features = [ 
     "sync",
     "macros",
@@ -28,6 +30,11 @@ tokio = { version = "^1", features = [
     "rt",
     "time"
     ]}
+async-trait = "0.1.58"
+
+# log
+tracing = "^0.1"
+tracing-wasm = "0.2.1"
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires

@@ -1,15 +1,15 @@
+use super::ws_bio::*;
+use crate::canvas;
 use rdp::{
-    core::client::{Connector, RdpClient},
-    model::{
-        error::{RdpError, RdpErrorKind, RdpResult},
-        link::{self, AsyncSecureBio},
+    core::{
+        client::{Connector, RdpClient},
+        event::RdpEvent,
     },
+    model::error::RdpErrorKind,
 };
+use tokio::sync::mpsc;
+use tracing::{info, warn};
 use web_sys::Element;
-
-use crate::{console_log, log};
-
-use super::ws_bio::WsSecureBio;
 
 const RDP_HOSTNAME: &str = "webrdp";
 
@@ -19,6 +19,8 @@ pub struct Rdp {
     username: String,
     password: String,
     domain: String,
+    screen: (u16, u16),
+    rdp_client: Option<RdpClient<WsStream>>,
 }
 
 impl Rdp {
@@ -29,12 +31,23 @@ impl Rdp {
             .unwrap()
             .get_element_by_id("rdp_status")
             .unwrap();
+        let body = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .body()
+            .unwrap();
+
+        let height = body.client_height() as u16;
+        let width = body.client_width() as u16;
         Self {
             url: url.to_owned(),
             status_bar,
             username: username.to_owned(),
             password: password.to_owned(),
             domain: domain.to_owned(),
+            rdp_client: None,
+            screen: (width, height),
         }
     }
 
@@ -53,15 +66,8 @@ impl Rdp {
     pub async fn start(&mut self) -> bool {
         let ws_stream = WsSecureBio::new(&self.url).await;
 
-        let body = web_sys::window()
-            .unwrap()
-            .document()
-            .unwrap()
-            .body()
-            .unwrap();
-
         let mut rdp_connector = Connector::new()
-            .screen(body.client_width() as u16, body.client_height() as u16)
+            .screen(self.screen.0, self.screen.1)
             .credentials(
                 self.domain.clone(),
                 self.username.clone(),
@@ -74,24 +80,50 @@ impl Rdp {
             .name(RDP_HOSTNAME.to_string())
             .use_nla(true);
 
-        let mut rdp_client = rdp_connector.connect(Box::new(ws_stream)).await.unwrap();
-        console_log!("Rdp Started");
-        loop {
-            if let Err(rdp::model::error::Error::RdpError(e)) = rdp_client
+        match rdp_connector.connect(Box::new(ws_stream)).await {
+            Ok(rdp_client) => {
+                info!("Rdp Started");
+                self.rdp_client = Some(rdp_client);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    pub async fn main_loop(mut self) {
+        let mut rdp_client = self.rdp_client.take().unwrap();
+
+        let (canvas_sender, mut rdp_reciver) = mpsc::channel(100);
+        let canvas = canvas::CanvasUtils::new(canvas_sender);
+        canvas.init(self.screen.0 as u32, self.screen.1 as u32);
+        'main: loop {
+            tokio::select! {
+                engine_recv = rdp_client
                 .read(|event| match event {
-                    _ => console_log!("ignore event"),
-                })
-                .await
-            {
-                match e.kind() {
-                    RdpErrorKind::Disconnect => {
-                        console_log!("Server ask for disconnect");
+                    RdpEvent::Bitmap(bitmap) => {
+                        canvas.draw(bitmap);
                     }
-                    _ => console_log!("{:?}", e),
+                    _ => unreachable!()
+                }) => {
+                    if let Err(rdp::model::error::Error::RdpError(e)) = engine_recv {
+                        match e.kind() {
+                            RdpErrorKind::Disconnect => {
+                                info!("Server ask for disconnect");
+                                canvas.close();
+                                self.disconnect_with_msg("Disconnected");
+                                break 'main;
+                            }
+                            _ => warn!("{:?}", e),
+                        }
+                    }
+                },
+                canvas_recv = rdp_reciver.recv() => {
+                    if let Some(rdp_event) = canvas_recv {
+                        let _ = rdp_client.try_write(rdp_event.into()).await;
+                    }
                 }
             }
         }
-        true
     }
 
     fn disconnect_with_msg(&self, msg: &str) {

@@ -84,7 +84,6 @@ impl CsspClient {
     fn handle_server_challenge(&mut self, rdp: &mut RdpInner) {
         let server_challenge = rdp.reader.read_to_end();
         let ans1_tree = BerObj::from_der(&server_challenge);
-        // console_log!("ans1_tree {:#?}", ans1_tree);
         if let ASN1Type::SequenceOwned(ref seq) = ans1_tree.get_value() {
             if let ASN1Type::PrivOwned(nego_tokens) = seq[1].get_value() {
                 if let ASN1Type::SequenceOwned(ref nego_seq) = nego_tokens.get_value() {

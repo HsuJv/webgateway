@@ -1,5 +1,3 @@
-use crate::{console_log, log};
-
 use super::protocol::*;
 use super::*;
 
@@ -73,7 +71,7 @@ impl RdpInner {
                         self.initializer = Some(handler);
                     }
 
-                    // console_log!("left {}, require {}", self.reader.remain(), self.require);
+                    // trace!("left {}, require {}", self.reader.remain(), self.require);
                     if let State::Disconnected = self.state {
                         break;
                     }
@@ -87,7 +85,7 @@ impl RdpInner {
             None
         } else {
             let mut out = Vec::with_capacity(self.outs.len());
-            // console_log!("Get {} output", self.outs.len());
+            // trace!("Get {} output", self.outs.len());
             for o in self.outs.drain(..) {
                 out.push(o);
             }
@@ -113,7 +111,7 @@ impl RdpInner {
 
 impl RdpInner {
     fn move_next(&mut self) {
-        console_log!("State move from {:?} to the next", self.state);
+        trace!("State move from {:?} to the next", self.state);
         match self.state {
             State::Init => {
                 let mut x224 = x224::X224::new(Self::move_next, Self::disconnect_with_err);
@@ -149,7 +147,7 @@ impl RdpInner {
     }
 
     fn disconnect_with_err(&mut self, err: &str) {
-        console_log!("{:#?}", err);
+        error!("{:#?}", err);
         self.state = State::Disconnected;
         self.outs.push(RdpOutput::Err(err.to_string()));
     }
