@@ -22,7 +22,7 @@ cd ${SSH} && cargo make install-release && cd ..
 [tasks.websockify]
 dependencies = ["install-dir"]
 script = '''
-cd ${WEBSOCKIFY} && cargo build --release && cp ./target/release/${WEBSOCKIFY} $INSTALL_PATH/
+cd ${WEBSOCKIFY} && cargo build --release --features ssl && cp ./target/release/${WEBSOCKIFY} $INSTALL_PATH/
 '''
 
 [tasks.install-dir]
