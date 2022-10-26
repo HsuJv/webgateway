@@ -1,22 +1,31 @@
 use crate::input::{InputEvent, KeyEventType, MouseEventType};
 use rdp::core::event::BitmapEvent;
-use std::rc::Rc;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 use tokio::sync::mpsc;
-use tracing::warn;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
+use wasm_timer::Instant;
 use web_sys::{
     CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
 };
+
+const MILLIS_IN_SEC: u32 = 1000;
 
 struct Canvas {
     canvas: HtmlCanvasElement,
     ctx: CanvasRenderingContext2d,
     output: mpsc::Sender<InputEvent>,
+    refresh_interval: u32,
+    video_mem: RefCell<Vec<u8>>,
+    timer: Cell<Instant>,
+    resolution: Cell<(u32, u32)>,
 }
 
 impl Canvas {
-    fn new(sender: mpsc::Sender<InputEvent>) -> Self {
+    fn new(sender: mpsc::Sender<InputEvent>, refresh_rate: u16) -> Self {
         let document = web_sys::window().unwrap().document().unwrap();
         let canvas = document.get_element_by_id("rdp-canvas").unwrap();
         let canvas: HtmlCanvasElement = canvas
@@ -33,6 +42,10 @@ impl Canvas {
             canvas,
             ctx,
             output: sender,
+            refresh_interval: MILLIS_IN_SEC / refresh_rate as u32,
+            video_mem: RefCell::new(Vec::new()),
+            timer: Cell::new(Instant::now()),
+            resolution: Cell::new((0, 0)),
         }
     }
 
@@ -40,7 +53,11 @@ impl Canvas {
         // set hight & width
         self.canvas.set_height(height);
         self.canvas.set_width(width);
+        self.video_mem
+            .borrow_mut()
+            .resize(height as usize * width as usize * 4, 0xff);
         self.ctx.rect(0_f64, 0_f64, width as f64, height as f64);
+        self.resolution.set((width, height));
         self.ctx.fill();
     }
 
@@ -225,6 +242,9 @@ impl Canvas {
             .add_event_listener_with_callback("contextmenu", cb.as_ref().unchecked_ref())
             .unwrap();
         cb.forget();
+
+        // initilize the timer
+        self.timer.set(Instant::now());
     }
 
     fn draw(&self, bm: BitmapEvent) {
@@ -235,45 +255,45 @@ impl Canvas {
         let bitmap_width = bm.width as u32;
         let bitmap_height = bm.height as u32;
 
-        let mut data = bm.decompress().unwrap();
+        let data = bm.decompress().unwrap();
         let mut y = 0;
-        let mut x = 0;
+        let mut x;
 
+        // only update the vedio buffer
+        let mut video = self.video_mem.borrow_mut();
         while y < bitmap_height {
+            x = 0;
+            let mut idx = (y as usize * bitmap_width as usize) * 4;
+            let mut d_idx = ((y + bitmap_dest_top) as usize * self.resolution.get().0 as usize
+                + bitmap_dest_left as usize)
+                * 4;
             while x < bitmap_width {
-                let idx = (y as usize * bitmap_width as usize + x as usize) * 4;
-                data.swap(idx, idx + 2);
-                data[idx + 3] = 255;
+                video[d_idx] = data[idx + 2];
+                video[d_idx + 1] = data[idx + 1];
+                video[d_idx + 2] = data[idx];
+                idx += 4;
+                d_idx += 4;
                 x += 1;
             }
-            x = 0;
             y += 1;
         }
 
-        let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
-            Clamped(&data),
-            bitmap_width as u32,
-            bitmap_height as u32,
-        );
-        if data.is_err() {
-            warn!(
-                "renderring failed at ({}, {}), width {}, height {}",
-                bitmap_dest_left, bitmap_dest_top, bitmap_width, bitmap_height,
-            );
+        if self.timer.get().elapsed().as_millis() < self.refresh_interval as u128 {
+            // if the time elapsed has not exceeded the refresh_interval
+            // return to decrease the calling of render
+            return;
         } else {
-            //
-            // trace!(
-            //     "draw x:{}-{}, y:{}-{}",
-            //     bitmap_dest_left,
-            //     bitmap_dest_right,
-            //     bitmap_dest_top,
-            //     bitmap_dest_bottom
-            // );
+            self.timer.set(Instant::now());
         }
+
+        let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+            Clamped(&video),
+            self.resolution.get().0,
+            self.resolution.get().1,
+        );
+
         let data = data.unwrap();
-        let _ = self
-            .ctx
-            .put_image_data(&data, bitmap_dest_left as f64, bitmap_dest_top as f64);
+        let _ = self.ctx.put_image_data(&data, 0_f64, 0_f64);
     }
 
     fn close(&self) {
@@ -294,9 +314,9 @@ impl Clone for CanvasUtils {
 }
 
 impl CanvasUtils {
-    pub fn new(sender: mpsc::Sender<InputEvent>) -> Self {
+    pub fn new(sender: mpsc::Sender<InputEvent>, refresh_rate: u16) -> Self {
         Self {
-            inner: Rc::new(Canvas::new(sender)),
+            inner: Rc::new(Canvas::new(sender, refresh_rate)),
         }
     }
 

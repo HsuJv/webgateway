@@ -94,7 +94,7 @@ impl Rdp {
         let mut rdp_client = self.rdp_client.take().unwrap();
 
         let (canvas_sender, mut rdp_reciver) = mpsc::channel(100);
-        let canvas = canvas::CanvasUtils::new(canvas_sender);
+        let canvas = canvas::CanvasUtils::new(canvas_sender, 60);
         canvas.init(self.screen.0 as u32, self.screen.1 as u32);
         'main: loop {
             tokio::select! {
