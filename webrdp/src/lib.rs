@@ -14,10 +14,13 @@ extern "C" {
     fn alert(s: &str);
     pub fn setClipBoard(s: String);
     pub fn getClipBoard() -> String;
+    fn prompt(msg: &str) -> String;
 }
 
-fn read_credentials() {
-    unimplemented!();
+fn read_credentials(user: &mut String, password: &mut String, domain: &mut String) {
+    *user = prompt("User:");
+    *password = prompt("Password:");
+    *domain = prompt("Domain:");
 }
 
 fn start_websocket() -> Result<(), JsValue> {
@@ -38,9 +41,15 @@ fn start_websocket() -> Result<(), JsValue> {
     );
 
     spawn_local(async move {
-        let mut rdp = Rdp::new(&url, "", "", "");
+        let mut username = String::new();
+        let mut password = String::new();
+        let mut domain = String::new();
+        read_credentials(&mut username, &mut password, &mut domain);
+        let mut rdp = Rdp::new(&url, &username, &password, &domain);
         while !rdp.start().await {
             warn!("Wrong credientials");
+            read_credentials(&mut username, &mut password, &mut domain);
+            rdp = Rdp::new(&url, &username, &password, &domain);
         }
         rdp.main_loop().await
     });
