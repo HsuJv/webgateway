@@ -26,4 +26,5 @@
     - WIP
 
 * RDP Clients:
-    - WIP
+    - A very easy client has already done
+    - Further feature & bugfix is in progress
