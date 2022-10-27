@@ -11,11 +11,32 @@ crate-type = ["cdylib", "rlib"]
 default = ["console_error_panic_hook"]
 
 [dependencies]
-wasm-bindgen = "0.2.83"
+wasm-bindgen = "0.2.63"
 js-sys = "0.3"
-flate2 = "1"
-byteorder = "1"
-# bytes="1"
+anyhow = "^1.0"
+# vnc-rs = { version="0.1.1" }
+vnc-rs = { path = "../../vnc-rs" }
+wasm-timer = "0.2.5"
+
+# websocket
+ws_stream_wasm = { version = "^0.7", features = ["tokio_io"] }
+async_io_stream = { version = "^0.3", features = ["tokio_io"] }
+
+# async
+wasm-bindgen-futures = "0.4.33"
+futures = "0.3.25"
+tokio = { version = "^1", features = [ 
+    "sync",
+    "macros",
+    "io-util",
+    "rt",
+    "time"
+    ]}
+async-trait = "0.1.58"
+
+# log
+tracing = "^0.1"
+tracing-wasm = "0.2.1"
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires
