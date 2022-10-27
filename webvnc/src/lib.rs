@@ -91,11 +91,6 @@ fn run() -> Result<(), JsValue> {
     Ok(())
 }
 
-#[wasm_bindgen]
-pub async fn foo() {
-    alert("asdffadsasfdfasd");
-}
-
 #[wasm_bindgen(start)]
 pub fn run_app() -> Result<(), JsValue> {
     utils::set_panic_hook();
