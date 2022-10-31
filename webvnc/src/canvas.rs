@@ -4,18 +4,18 @@ use crate::{
     x11cursor::MouseUtils,
     x11keyboard::{self, KeyboardUtils},
 };
+use fluvio_wasm_timer::Instant;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
-    sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc;
 use vnc::{Rect, X11Event};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
-use wasm_timer::Instant;
 use web_sys::{
-    CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
+    CanvasRenderingContext2d, HtmlButtonElement, HtmlCanvasElement, HtmlImageElement,
+    KeyboardEvent, MouseEvent,
 };
 
 const MILLIS_IN_SEC: u32 = 1000;
@@ -75,7 +75,9 @@ impl Canvas {
             e.stop_propagation();
             futures::executor::block_on(async move {
                 let _ = sender
-                    .send(X11Event::KeyEvent(KeyboardUtils::get_keysym(e), true))
+                    .send(X11Event::KeyEvent(
+                        (KeyboardUtils::get_keysym(e), true).into(),
+                    ))
                     .await;
             });
         };
@@ -96,7 +98,9 @@ impl Canvas {
             e.stop_propagation();
             futures::executor::block_on(async move {
                 let _ = sender
-                    .send(X11Event::KeyEvent(KeyboardUtils::get_keysym(e), false))
+                    .send(X11Event::KeyEvent(
+                        (KeyboardUtils::get_keysym(e), false).into(),
+                    ))
                     .await;
             });
         };
@@ -124,22 +128,24 @@ impl Canvas {
             let sender = sender.clone();
             futures::executor::block_on(async move {
                 let _ = sender
-                    .send(X11Event::KeyEvent(x11keyboard::XK_Control_L, true))
+                    .send(X11Event::KeyEvent((x11keyboard::XK_Control_L, true).into()))
                     .await;
                 let _ = sender
-                    .send(X11Event::KeyEvent(x11keyboard::XK_Alt_L, true))
+                    .send(X11Event::KeyEvent((x11keyboard::XK_Alt_L, true).into()))
                     .await;
                 let _ = sender
-                    .send(X11Event::KeyEvent(x11keyboard::XK_Delete, true))
+                    .send(X11Event::KeyEvent((x11keyboard::XK_Delete, true).into()))
                     .await;
                 let _ = sender
-                    .send(X11Event::KeyEvent(x11keyboard::XK_Delete, false))
+                    .send(X11Event::KeyEvent((x11keyboard::XK_Delete, false).into()))
                     .await;
                 let _ = sender
-                    .send(X11Event::KeyEvent(x11keyboard::XK_Alt_L, false))
+                    .send(X11Event::KeyEvent((x11keyboard::XK_Alt_L, false).into()))
                     .await;
                 let _ = sender
-                    .send(X11Event::KeyEvent(x11keyboard::XK_Control_L, false))
+                    .send(X11Event::KeyEvent(
+                        (x11keyboard::XK_Control_L, false).into(),
+                    ))
                     .await;
             });
         };
@@ -165,7 +171,9 @@ impl Canvas {
             e.stop_propagation();
             let (x, y, mask) = MouseUtils::get_mouse_sym(e);
             futures::executor::block_on(async move {
-                let _ = sender.send(X11Event::PointerEvent(x, y, mask)).await;
+                let _ = sender
+                    .send(X11Event::PointerEvent((x, y, mask).into()))
+                    .await;
             });
         };
 
@@ -185,7 +193,9 @@ impl Canvas {
             e.stop_propagation();
             let (x, y, mask) = MouseUtils::get_mouse_sym(e);
             futures::executor::block_on(async move {
-                let _ = sender.send(X11Event::PointerEvent(x, y, mask)).await;
+                let _ = sender
+                    .send(X11Event::PointerEvent((x, y, mask).into()))
+                    .await;
             });
         };
 
@@ -205,7 +215,9 @@ impl Canvas {
             e.stop_propagation();
             let (x, y, mask) = MouseUtils::get_mouse_sym(e);
             futures::executor::block_on(async move {
-                let _ = sender.send(X11Event::PointerEvent(x, y, mask)).await;
+                let _ = sender
+                    .send(X11Event::PointerEvent((x, y, mask).into()))
+                    .await;
             });
         };
 
@@ -236,50 +248,84 @@ impl Canvas {
         self.timer.set(Instant::now());
     }
 
-    fn draw(&self, rect: Rect, mut data: Vec<u8>) {
-        // let mut y = 0;
-        // let mut x;
+    fn draw(&self, rect: Rect, data: Vec<u8>) {
+        let mut y = 0;
+        let mut x;
 
         // only update the vedio buffer
-        // let mut video = self.video_mem.borrow_mut();
-        // while y < rect.height {
-        //     x = 0;
-        //     let mut idx = (y as usize * rect.width as usize) * 4;
-        //     let mut d_idx =
-        //         ((y + rect.y) as usize * self.resolution.get().0 as usize + rect.x as usize) * 4;
-        //     while x < rect.width {
-        //         video[d_idx] = data[idx];
-        //         video[d_idx + 1] = data[idx + 1];
-        //         video[d_idx + 2] = data[idx + 2];
-        //         idx += 4;
-        //         d_idx += 4;
-        //         x += 1;
-        //     }
-        //     y += 1;
-        // }
-
-        // if self.timer.get().elapsed().as_millis() < self.refresh_interval as u128 {
-        //     // if the time elapsed has not exceeded the refresh_interval
-        //     // return to decrease the calling of render
-        //     return;
-        // } else {
-        //     self.timer.set(Instant::now());
-        // }
-
-        let mut idx = 3;
-        while idx < data.len() {
-            data[idx] = 255;
-            idx += 4;
+        let mut video = self.video_mem.borrow_mut();
+        while y < rect.height {
+            x = 0;
+            let mut idx = (y as usize * rect.width as usize) * 4;
+            let mut d_idx =
+                ((y + rect.y) as usize * self.resolution.get().0 as usize + rect.x as usize) * 4;
+            while x < rect.width {
+                video[d_idx] = data[idx];
+                video[d_idx + 1] = data[idx + 1];
+                video[d_idx + 2] = data[idx + 2];
+                idx += 4;
+                d_idx += 4;
+                x += 1;
+            }
+            y += 1;
         }
 
+        if self.timer.get().elapsed().as_millis() < self.refresh_interval as u128 {
+            // if the time elapsed has not exceeded the refresh_interval
+            // return to decrease the calling of render
+            return;
+        } else {
+            self.timer.set(Instant::now());
+        }
+        // let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+        //     Clamped(&data),
+        //     rect.width as u32,
+        //     rect.height as u32,
+        // );
+
+        // let data = data.unwrap();
+        // let _ = self.ctx.put_image_data(&data, rect.x as f64, rect.y as f64);
         let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
-            Clamped(&data),
-            rect.width as u32,
-            rect.height as u32,
+            Clamped(&video),
+            self.resolution.get().0,
+            self.resolution.get().1,
         );
 
         let data = data.unwrap();
-        let _ = self.ctx.put_image_data(&data, rect.x as f64, rect.y as f64);
+        let _ = self.ctx.put_image_data(&data, 0_f64, 0_f64);
+    }
+
+    fn copy(&self, dst: Rect, src: Rect) {
+        //copy
+        let _ = self
+            .ctx
+            .draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                &self.canvas,
+                src.x as f64,
+                src.y as f64,
+                dst.width as f64,
+                dst.height as f64,
+                dst.x as f64,
+                dst.y as f64,
+                dst.width as f64,
+                dst.height as f64,
+            );
+    }
+
+    fn jpeg(&self, rect: Rect, data: Vec<u8>) {
+        let image = HtmlImageElement::new().unwrap();
+        let base64 = crate::utils::base64_encode(&data);
+        image.set_src(&format!(
+            "data:image/jpeg;base64,{}",
+            std::str::from_utf8(&base64).unwrap()
+        ));
+        let _ = self.ctx.draw_image_with_html_image_element_and_dw_and_dh(
+            &image,
+            rect.x as f64,
+            rect.y as f64,
+            rect.width as f64,
+            rect.height as f64,
+        );
     }
 
     fn close(&self) {
@@ -313,6 +359,14 @@ impl CanvasUtils {
 
     pub fn draw(&self, rect: Rect, data: Vec<u8>) {
         self.inner.as_ref().draw(rect, data);
+    }
+
+    pub fn copy(&self, dst: Rect, src: Rect) {
+        self.inner.as_ref().copy(dst, src);
+    }
+
+    pub fn jpeg(&self, rect: Rect, data: Vec<u8>) {
+        self.inner.as_ref().jpeg(rect, data);
     }
 
     pub fn close(&self) {

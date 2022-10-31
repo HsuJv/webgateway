@@ -4,9 +4,8 @@ mod x11cursor;
 mod x11keyboard;
 
 use ::vnc::{client::connector::VncConnector, PixelFormat, VncEncoding, VncEvent, X11Event};
-use anyhow::Result;
 use canvas::CanvasUtils;
-use tokio;
+use tracing::info;
 use tracing_wasm::WASMLayerConfigBuilder;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -43,11 +42,14 @@ fn run() -> Result<(), JsValue> {
 
         // vnc connect
         let vnc = VncConnector::new(wsio.into_io())
-            .set_auth_method(|| {
-                let passwd = prompt("Input your password");
-                passwd
-            })
+            .set_auth_method(|| prompt("Input your password"))
+            .add_encoding(VncEncoding::Tight)
+            .add_encoding(VncEncoding::Zrle)
+            .add_encoding(VncEncoding::CopyRect)
             .add_encoding(VncEncoding::Raw)
+            // does not need
+            // .add_encoding(VncEncoding::CursorPseudo)
+            // .add_encoding(VncEncoding::DesktopSizePseudo)
             .allow_shared(true)
             .set_pixel_format(PixelFormat::rgba())
             .set_version(vnc::VncVersion::RFB33)
@@ -66,8 +68,8 @@ fn run() -> Result<(), JsValue> {
 
         let vnc = vnc.unwrap().finish().unwrap();
 
-        let (vnc_evnets_sender, mut vnc_events_receiver) = tokio::sync::mpsc::channel(100);
-        let (x11_events_sender, x11_events_receiver) = tokio::sync::mpsc::channel(100);
+        let (vnc_evnets_sender, mut vnc_events_receiver) = tokio::sync::mpsc::channel(4096);
+        let (x11_events_sender, x11_events_receiver) = tokio::sync::mpsc::channel(4096);
 
         spawn_local(async move {
             vnc.run(vnc_evnets_sender, x11_events_receiver)
@@ -76,14 +78,43 @@ fn run() -> Result<(), JsValue> {
         });
         let canvas = CanvasUtils::new(x11_events_sender.clone(), 60);
 
-        while let Some(event) = vnc_events_receiver.recv().await {
+        fn hande_vnc_event(event: VncEvent, canvas: &CanvasUtils) {
             match event {
-                VncEvent::SetResulotin(width, height) => canvas.init(width as u32, height as u32),
-                VncEvent::BitImage(rect, data) => canvas.draw(rect, data),
+                VncEvent::SetResolution(screen) => {
+                    info!("Resize {:?}", screen);
+                    canvas.init(screen.width as u32, screen.height as u32)
+                }
+                VncEvent::RawImage(rect, data) => {
+                    canvas.draw(rect, data);
+                }
+                VncEvent::Bell => {
+                    //ignore
+                }
                 VncEvent::SetPixelFormat(_) => unreachable!(),
+                VncEvent::Copy(dst, src) => {
+                    canvas.copy(dst, src);
+                }
+                VncEvent::JpegImage(rect, data) => {
+                    canvas.jpeg(rect, data);
+                }
+                VncEvent::SetCursor(rect, data) => {
+                    if rect.width != 0 {
+                        canvas.draw(rect, data)
+                    }
+                }
+                VncEvent::Text(string) => {
+                    setClipBoard(string);
+                }
                 _ => unreachable!(),
             }
-            x11_events_sender.send(X11Event::Refresh).await.unwrap();
+        }
+
+        while let Some(event) = vnc_events_receiver.recv().await {
+            hande_vnc_event(event, &canvas);
+            while let Ok(e) = vnc_events_receiver.try_recv() {
+                hande_vnc_event(e, &canvas);
+            }
+            let _ = x11_events_sender.send(X11Event::Refresh).await;
         }
         canvas.close();
     });
