@@ -14,7 +14,7 @@ default = ["console_error_panic_hook"]
 wasm-bindgen = "0.2.63"
 js-sys = "0.3"
 x509-parser = "0.14.0"
-rdp-rs = { path = "./rdp-rs", default-features = false }
+rdp-rs = { git = "https://github.com/HsuJv/rdp-rs", default-features = false }
 wasm-timer = "0.2.5"
 
 # websocket
