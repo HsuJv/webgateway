@@ -13,7 +13,7 @@ default = ["console_error_panic_hook"]
 [dependencies]
 wasm-bindgen = "0.2.63"
 js-sys = "0.3"
-vnc-rs = "^0.2"
+vnc-rs = "^0.3"
 fluvio-wasm-timer = "0.2.5"
 
 # websocket

@@ -42,7 +42,7 @@ fn run() -> Result<(), JsValue> {
 
         // vnc connect
         let vnc = VncConnector::new(wsio.into_io())
-            .set_auth_method(|| prompt("Input your password"))
+            .set_auth_method(async move { Ok(prompt("Input your password")) })
             .add_encoding(VncEncoding::Tight)
             .add_encoding(VncEncoding::Zrle)
             .add_encoding(VncEncoding::CopyRect)
