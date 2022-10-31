@@ -6,6 +6,8 @@
 * rust
 * cargo-make
 * wasm-pack
+* wasm-opt
+* libssl-devel
 
 ## Build
 
@@ -17,10 +19,7 @@
 ## Milestones
 
 * VNC Clients:
-    - Raw encoding support
-    - Tight encoding support (Default)
-    - ZRLE encoding support
-    - Other encoding support (WIP)
+    - Basic functions work
 
 * SSH Clients:
     - WIP
