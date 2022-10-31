@@ -47,9 +47,8 @@ fn run() -> Result<(), JsValue> {
             .add_encoding(VncEncoding::Zrle)
             .add_encoding(VncEncoding::CopyRect)
             .add_encoding(VncEncoding::Raw)
-            // does not need
             // .add_encoding(VncEncoding::CursorPseudo)
-            // .add_encoding(VncEncoding::DesktopSizePseudo)
+            .add_encoding(VncEncoding::DesktopSizePseudo)
             .allow_shared(true)
             .set_pixel_format(PixelFormat::rgba())
             .set_version(vnc::VncVersion::RFB33)
@@ -76,9 +75,9 @@ fn run() -> Result<(), JsValue> {
                 .await
                 .unwrap()
         });
-        let canvas = CanvasUtils::new(x11_events_sender.clone(), 60);
+        let mut canvas = CanvasUtils::new(x11_events_sender.clone());
 
-        fn hande_vnc_event(event: VncEvent, canvas: &CanvasUtils) {
+        fn hande_vnc_event(event: VncEvent, canvas: &mut CanvasUtils) {
             match event {
                 VncEvent::SetResolution(screen) => {
                     info!("Resize {:?}", screen);
@@ -110,9 +109,9 @@ fn run() -> Result<(), JsValue> {
         }
 
         while let Some(event) = vnc_events_receiver.recv().await {
-            hande_vnc_event(event, &canvas);
+            hande_vnc_event(event, &mut canvas);
             while let Ok(e) = vnc_events_receiver.try_recv() {
-                hande_vnc_event(e, &canvas);
+                hande_vnc_event(e, &mut canvas);
             }
             let _ = x11_events_sender.send(X11Event::Refresh).await;
         }
