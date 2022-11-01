@@ -228,7 +228,12 @@ impl Canvas {
         cb.forget();
     }
 
-    fn draw(&self, rect: Rect, data: Vec<u8>) {
+    fn draw(&self, rect: Rect, mut data: Vec<u8>) {
+        let mut idx = 0;
+        while idx < data.len() {
+            data[idx + 3] = 255;
+            idx += 4;
+        }
         let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
             Clamped(&data),
             rect.width as u32,
