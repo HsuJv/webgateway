@@ -5,7 +5,8 @@ mod x11keyboard;
 
 use ::vnc::{client::connector::VncConnector, PixelFormat, VncEncoding, VncEvent, X11Event};
 use canvas::CanvasUtils;
-use tracing::info;
+use futures::StreamExt;
+use tracing::{error, info};
 use tracing_wasm::WASMLayerConfigBuilder;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -71,14 +72,8 @@ fn run() -> Result<(), JsValue> {
 
         let vnc = vnc.unwrap().finish().unwrap();
 
-        let (vnc_evnets_sender, mut vnc_events_receiver) = tokio::sync::mpsc::channel(4096);
-        let (x11_events_sender, x11_events_receiver) = tokio::sync::mpsc::channel(4096);
+        let (x11_events_sender, mut x11_events_receiver) = tokio::sync::mpsc::channel(4096);
 
-        spawn_local(async move {
-            vnc.run(vnc_evnets_sender, x11_events_receiver)
-                .await
-                .unwrap()
-        });
         let mut canvas = CanvasUtils::new(x11_events_sender.clone());
 
         fn hande_vnc_event(event: VncEvent, canvas: &mut CanvasUtils) {
@@ -108,18 +103,38 @@ fn run() -> Result<(), JsValue> {
                 VncEvent::Text(string) => {
                     setClipBoard(string);
                 }
+                VncEvent::Error(msg) => {
+                    error!(msg);
+                    alert(&msg);
+                    panic!()
+                }
                 _ => unreachable!(),
             }
         }
 
-        while let Some(event) = vnc_events_receiver.recv().await {
-            hande_vnc_event(event, &mut canvas);
-            while let Ok(e) = vnc_events_receiver.try_recv() {
-                hande_vnc_event(e, &mut canvas);
+        spawn_local(async move {
+            let mut interval =
+                fluvio_wasm_timer::Interval::new(std::time::Duration::from_millis(1));
+            loop {
+                match vnc.poll_event().await {
+                    Ok(Some(e)) => hande_vnc_event(e, &mut canvas),
+                    Ok(None) => {
+                        let _ = interval.next().await;
+                        let _ = vnc.input(X11Event::Refresh).await;
+                    }
+                    Err(e) => {
+                        alert(&e.to_string());
+                        break;
+                    }
+                }
+
+                while let Ok(x11event) = x11_events_receiver.try_recv() {
+                    let _ = vnc.input(x11event).await;
+                }
             }
-            let _ = x11_events_sender.send(X11Event::Refresh).await;
-        }
-        canvas.close();
+            canvas.close();
+            let _ = vnc.close().await;
+        })
     });
 
     Ok(())

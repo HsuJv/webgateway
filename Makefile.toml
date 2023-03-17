@@ -1,34 +1,77 @@
 [tasks.install-debug]
-dependencies = ["websockify", "wasm-debug"]
+dependencies = ["websockify", "rdp-debug", "vnc-debug", "ssh-debug"]
 
 [tasks.install-release]
-dependencies = ["websockify", "wasm-release"]
+dependencies = ["websockify", "rdp-release", "vnc-release", "ssh-release"]
 
-[tasks.wasm-debug]
+[tasks.rdp-debug]
+dependencies = ["install-dir"]
+script = '''
+cd ${RDP} && cargo make install-debug && cd ..
+'''
+
+[tasks.vnc-debug]
+dependencies = ["install-dir"]
 script = '''
 cd ${VNC} && cargo make install-debug && cd ..
-cd ${RDP} && cargo make install-debug && cd ..
+'''
+
+[tasks.ssh-debug]
+dependencies = ["install-dir"]
+script = '''
 cd ${SSH} && cargo make install-debug && cd ..
 '''
 
-[tasks.wasm-release]
+[tasks.rdp-release]
+dependencies = ["install-dir"]
 script = '''
-cd ${VNC} && cargo make install-release && cd ..
 cd ${RDP} && cargo make install-release && cd ..
-cd ${SSH} && cargo make install-release && cd ..
 '''
 
+[tasks.vnc-release]
+dependencies = ["install-dir"]
+script = '''
+cd ${VNC} && cargo make install-release && cd ..
+'''
+
+[tasks.ssh-release]
+dependencies = ["install-dir"]
+script = '''
+cd ${SSH} && cargo make install-release && cd ..
+'''
 
 [tasks.websockify]
 dependencies = ["install-dir"]
 script = '''
-cd ${WEBSOCKIFY} && cargo build --release --features ssl && cp ./target/release/${WEBSOCKIFY} $INSTALL_PATH/
+cd ${WEBSOCKIFY} && cargo build --release --features ssl && cp ./target/release/${WEBSOCKIFY} ${INSTALL_PATH}/
 '''
 
 [tasks.install-dir]
 script = '''
-mkdir -p $INSTALL_PATH
-cp assets/* $INSTALL_PATH
+mkdir -p ${INSTALL_PATH}
+cp assets/* ${INSTALL_PATH}
+'''
+
+[tasks.clean-rdp]
+script = '''
+cd ${RDP} && cargo clean && cd ..
+'''
+
+[tasks.clean-vnc]
+script = '''
+cd ${VNC} && cargo clean && cd ..
+'''
+
+[tasks.clean-ssh]
+script = '''
+cd ${SSH} && cargo clean && cd ..
+'''
+
+[tasks.clean-all]
+dependencies = ["clean-ssh", "clean-vnc", "clean-rdp"]
+script = '''
+rm -rf ${INSTALL_PATH}
+cd ${WEBSOCKIFY} && cargo clean && cd ..
 '''
 
 [env]
