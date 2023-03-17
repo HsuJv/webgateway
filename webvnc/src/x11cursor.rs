@@ -1,5 +1,3 @@
-
-
 pub struct MouseUtils;
 
 impl MouseUtils {
