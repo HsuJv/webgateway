@@ -7,37 +7,37 @@ dependencies = ["websockify", "rdp-release", "vnc-release", "ssh-release"]
 [tasks.rdp-debug]
 dependencies = ["install-dir"]
 script = '''
-cd ${RDP} && cargo make install-debug && cd ..
+cargo make --cwd ${RDP} install-debug
 '''
 
 [tasks.vnc-debug]
 dependencies = ["install-dir"]
 script = '''
-cd ${VNC} && cargo make install-debug && cd ..
+cargo make --cwd ${VNC} install-debug
 '''
 
 [tasks.ssh-debug]
 dependencies = ["install-dir"]
 script = '''
-cd ${SSH} && cargo make install-debug && cd ..
+cargo make --cwd ${SSH} install-debug
 '''
 
 [tasks.rdp-release]
 dependencies = ["install-dir"]
 script = '''
-cd ${RDP} && cargo make install-release && cd ..
+cargo make --cwd ${RDP} install-release
 '''
 
 [tasks.vnc-release]
 dependencies = ["install-dir"]
 script = '''
-cd ${VNC} && cargo make install-release && cd ..
+cargo make --cwd ${VNC} install-release
 '''
 
 [tasks.ssh-release]
 dependencies = ["install-dir"]
 script = '''
-cd ${SSH} && cargo make install-release && cd ..
+cargo make --cwd ${SSH} install-release
 '''
 
 [tasks.websockify]

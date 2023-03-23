@@ -1,4 +1,5 @@
 [tasks.build-debug]
+toolchain = "nightly"
 command = "wasm-pack"
 args = ["build", "--target", "web", "--out-name", "webssh", "--out-dir", "./pkg", "--dev"]
 
